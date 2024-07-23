@@ -716,6 +716,121 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 
 管理玩家属性、能力和技能组合
 
+* **此模块的主要类**
+
+|类名|描述|
+|:-:|:-:|
+|FPAbilitySystemComponent|能力系统组件：添加给`APlayerState`|
+|FPAbilityManagerComponent|能力管理组件，添加给`APawn`，服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和`玩家存档`初始化属性和能力，客户端通过[能力属性配置](#fpabilitysystem-attributeconfig)绑定增强输入|
+|FPAttributeSet|管理属性，添加给`APlayerState`。插件提供了[属性集](#fpabilitysystem-attributeset)。可以继承此类添加属性，但必须重写它的函数`InitaAttributeSaveData`|
+|FPAbilityBase|能力基类|
+
+<a name="fpabilitysystem-attributeconfig"></a>
+* **能力属性配置**
+
+<a name="fpabilitysystem-abilitymodel"></a>
+* **能力模型**
+
+<a name="fpabilitysystem-attributeset"></a>
+* **属性集**
+
+|属性|描述|数据来源|网络复制|
+|:-:|:-:|:-:|:-:|
+|Level|等级，升级会提供属性点|存档数据|是|
+|MaxLevel|最大等级|项目设置|否|
+|XP|杀死敌人获取的经验值|存档数据|是|
+|XPBaseValue|角色1级升级时所需的经验|项目设置|否|
+|MaxXP|当前等级升级时所需的经验<br>$MaxXP=XPBaseValue \times Level^2$|计算|是|
+|XPBounty|角色死亡时奖励给杀手的经验值 = $XPBounty \times Level$|数据表格|是|
+|Points|加点剩余的属性点<br>可以加点的属性包括：血量、耐力、能量、速度和力量<br>已经使用的属性点 + $Points = LevelUpPoints \times Level$|存档数据|是|
+|LevelUpPoints|升级提供的属性点|项目设置|否|
+|Health|当前血量|存档数据|是|
+|MaxHealth|血量最大值，当最大血量变化时，当前血量保持百分比不变<br>$MaxHealth=HealthInitial+HealthPerPoints\times HealthPoints$|计算|是|
+|HealthInitial|血量初始值|数据表格|是|
+|HealthRegenRate|血量恢复率，恢复血量会消耗能量|数据表格|是|
+|HealthPoints|血量属性点|存档数据|是|
+|HealthPerPoints|每个属性点添加的血量值|数据表格|是|
+|Stamina|当前耐力|存档数据|是|
+|MaxStamina|耐力最大值，当最大耐力变化时，当前耐力保持百分比不变<br>$MaxStamina=StaminaInitial+StaminaPerPoints\times StaminaPoints$|计算|是|
+|StaminaInitial|耐力初始值|数据表格|是|
+|StaminaRegenRate|耐力恢复率，恢复耐力会消耗能量|数据表格|是|
+|StaminaPoints|耐力属性点|存档数据|是|
+|StaminaPerPoints|每个属性点添加的耐力值|数据表格|是|
+|Energy|当前能量，恢复血量和耐力会额外消耗能量|存档数据|是|
+|MaxEnergy|能量最大值，当最大耐力变化时，当前能量保持不变(百分比改变)<br>$MaxEnergy=EnergyInitial+EnergyPerPoints\times EnergyPoints$|计算|是|
+|EnergyInitial|能量初始值|数据表格|是|
+|EnergyUseRate|能量消耗率，角色活着会持续消耗能量；没有能量时，持续消耗血量|数据表格|是|
+|EnergyPoints|能量属性点|存档数据|是|
+|EnergyPerPoints|每个属性点添加的能量值|数据表格|是|
+|Speed|影响所有行为的速度，按百分比增速Speed%<br>$Speed=100+SpeedPerPoints\times SpeedPoints$|计算|是|
+|SpeedPoints|速度属性点|存档数据|是|
+|SpeedPerPoints|每个属性点添加的速度值|数据表格|是|
+|Strength|力量，按百分比增伤Strength%<br>$Strength=100+StrengthPerPoints\times StrengthPoints$|计算|是|
+|StrengthPoints|力量属性点|存档数据|是|
+|StrengthPerPoints|每个属性点添加的力量值|数据表格|是|
+|WeaponDamage|武器伤害|装备|是|
+|Armor|护甲|装备|是|
+|IncreaseDamage|百分比增伤，取值范围[-1, +∞]|Buff|是|
+|ReduceDamage|百分比减伤，取值范围[-∞, 1]|Buff|是|
+|Damage|受到的伤害，仅用于[伤害计算](#fpabilitysystem-damagecalculation)|计算|否|
+|MaxWeight|最大负重|数据表格|是|
+
+<a name="fpabilitysystem-damagecalculation"></a>
+* **伤害计算**
+
+未减伤前伤害(UnmitigatedDamage)；能力基础伤害(BaseDamage)；减伤后伤害/实际伤害(MitigatedDamage)。
+$UnmitigatedDamage = (BaseDamage + WeaponDamage) \times \dfrac{Strength}{100} \times (1 + IncreaseDamage)$
+$MitigatedDamage = UnmitigatedDamage\times \dfrac{100}{100 + Armor}\times (1 -ReduceDamage)$
+
+* **使用指南**
+
+1、继承`FFPAbilityData`创建[能力模型](#fpabilitysystem-abilitymodel)的数据表格，继承`FFPAttributeConfig`创建[能力属性配置](#fpabilitysystem-attributeconfig)的数据表格，并将这两个数据表格添加给`FPAbility`的项目设置
+
+2、给`APlayerState`添加`UFPAttributeSet`和`UFPAbilitySystemComponent`，并继承`IAbilitySystemInterface`接口，重写接口的函数`GetAbilitySystemComponent`
+
+```c++
+AMyPlayerState::AMyPlayerState()
+{
+	AttributeSet = CreateDefaultSubobject<UFPAttributeSet>(TEXT("AttributeSet"));
+	AbilitySystemComponent = CreateDefaultSubobject<UFPAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+}
+
+void AMyPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+```
+
+3、给`APawn`添加`UFPAbilityManagerComponent`组件，并调用`UFPAbilityManagerComponent`的函数`ServerInitComp`和`ClientInitComp`初始化组件
+
+```c++
+// 服务器初始化组件，建议在APawn::PossessedBy中调用
+// @param InComp 能力系统组件
+// @param InAttributeSet 属性集
+// @param InSaveAttributes 属性存档数据，读取在服务器保存的属性数据，如果直接使用UFPAttributeSet，提供UFPAbilityFunctionLibrary::SaveDataToAttributeData转换
+void ServerInitComp(UFPAbilitySystemComponent* InComp, UFPAttributeSet* InAttributeSet, TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
+
+// 客户端初始化组件，建议在APawn::OnRep_PlayerState中调用
+// @param InComp 能力系统组件
+// @param InAttributeSet 属性集
+void ClientInitComp(UFPAbilitySystemComponent* InComp, UFPAttributeSet* InAttributeSet);
+```
+
+4、如果不直接使用`FPAttributeSet`，而是使用它的子类，必须重写`FPAttributeSet`的函数`InitaAttributeSaveData`
+
+```c++
+// 初始化属性存档数据
+UFUNCTION(BlueprintCallable, Category = "Attribute")
+virtual void InitaAttributeSaveData(TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
+
+// 添加到属性的属性点
+UFUNCTION(BlueprintCallable, Category = "Points")
+virtual void PointsAddedToAttributePoints(const FGameplayAttribute& InAttribute, int32 NewValue);
+
+// 应用受到到伤害
+virtual void ApplyDamage(const FGameplayEffectModCallbackData& Data);
+```
+
 <a name="fpfeatures"></a>
 ## FPFeatures
 
@@ -732,7 +847,7 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 |:-:|:-:|
 |FPInteractionComponent|添加此组件的`APawn`可使用互动功能|
 |FPInteractionInterface|互动的目标必须继承此接口|
-|FPInteractionWidget|显示互动提示的控件继承此类|
+|FPInteractionWidget|显示互动提示的控件继承此类，并添加给`FPInteraction`项目设置|
 |FPInteractionActor|互动的目标Actor继承此类，或者添加`FPInteractionInterface`接口|
 
 <a name="fpfeatures-fpinventory"></a>
