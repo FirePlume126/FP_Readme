@@ -62,7 +62,7 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 ### FPInput
 
 管理输入(仅用于C++)，绑定输入、更改绑定按键。
-`UFPInputComponent`是该模块的主要类，它继承于`UEnhancedInputComponent`，在`UFPInputComponent`中管理绑定的游戏标签、触发状态和委托，重复绑定时(`UInputAction`和`ETriggerEvent`相同)，会覆盖旧的绑定(旧的绑定会移除)。
+`UFPInputComponent`是该模块的主要类，它继承于`UEnhancedInputComponent`，在`UFPInputComponent`中管理绑定的游戏标签、触发状态和委托，重复绑定时(`UInputAction`和`ETriggerEvent`和绑定函数的类相同)，会覆盖旧的绑定(旧的绑定会移除)。
 
 * **使用指南**
 
@@ -91,19 +91,20 @@ static void AddInputMappings(AActor* InActor);
 // @param InActor 输入APlayerController调用DefaultInputConfig，输入输入APawn调用AbilityInputConfig
 static void RemoveInputMappings(AActor* InActor);
 
-// 绑定输入动作，重复绑定时(InputTag和TriggerEvent相同)，会覆盖旧的绑定(旧的绑定会移除)
+// 绑定输入动作，重复绑定时(InputTag、TriggerEvent和绑定函数的类相同)，会覆盖旧的绑定(旧的绑定会移除)
+// @param InInputComponent 输入组件，APlayerController的输入组件会调用DefaultInputConfig，否则调用AbilityInputConfig
 // @param InputTag 输入标签需要在项目设置DefaultInputConfig或AbilityInputConfig中设置
 // @param TriggerEvent 触发状态
-// @param Object 绑定函数的对象类
+// @param Object 绑定函数的类
 // @param Func 绑定的函数
 template<class UserClass, typename FuncType>
-static void BindInputAction(const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func);
+static uint32 BindInputAction(UInputComponent* InInputComponent, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func);
 
-// 移除能力输入已绑定的动作
-static void RemoveAbilityInputActionBinding(APawn* InPawn, const FGameplayTag& InInputTag, ETriggerEvent InTriggerEvent);
+// 解除能力绑定
+static void RemoveAbilityBind(UInputComponent* InInputComponent, uint32 InBindHandle);
 
-// 解除所有能力输入动作绑定
-static void RemoveAbilityBinds(APawn* InPawn);
+// 解除所以能力绑定
+static void RemoveAllAbilityBinds(UInputComponent* InInputComponent);
 
 // 更改多个绑定，并应用保存
 // @param InMapping FName是映射名称，FKey是对应的按键
@@ -637,6 +638,11 @@ static void SetServerTimeSeconds(const UObject* WorldContextObject, int32 InTime
 UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"), Category = "FPOnline")
 static int32 GetServerTimeSeconds(const UObject* WorldContextObject);
 
+// 玩家或AI死亡时调用
+// @param RespawnDelay 复活时间，等于0时不复活
+UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"), Category = "FPOnline")
+static void PawnDied(const UObject* WorldContextObject, AController* InController, float RespawnDelay);
+
 // 设置玩家ID：本地调用，可以通过APlayerState获取玩家ID
 UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"), Category = "FPOnline")
 static void SetPlayerId(const UObject* WorldContextObject, int32 NewPlayerId);
@@ -721,12 +727,15 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 |类名|描述|
 |:-:|:-:|
 |FPAbilitySystemComponent|能力系统组件：添加给`APlayerState`|
-|FPAbilityManagerComponent|能力管理组件，添加给`APawn`，服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和`玩家存档`初始化属性和能力，客户端通过[能力属性配置](#fpabilitysystem-attributeconfig)绑定增强输入|
-|FPAttributeSet|管理属性，添加给`APlayerState`。插件提供了[属性集](#fpabilitysystem-attributeset)。可以继承此类添加属性，但必须重写它的函数`InitaAttributeSaveData`|
+|FPAbilityManagerComponent|能力管理组件，添加给`APawn`，服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和`玩家存档`初始化属性和能力，本地通过[能力属性配置](#fpabilitysystem-attributeconfig)绑定按键输入(AI的Pawn会忽略绑定)|
+|FPAttributeSet|管理属性，添加给`APlayerState`。插件提供了[属性集](#fpabilitysystem-attributeset)。<br>可以继承此类添加属性，但必须重写它的函数`InitaAttributeSaveData`|
 |FPAbilityBase|能力基类|
 
 <a name="fpabilitysystem-attributeconfig"></a>
 * **能力属性配置**
+
+AI的Pawn会忽略绑定；死亡时移除能力，解除输入绑定
+
 
 <a name="fpabilitysystem-abilitymodel"></a>
 * **能力模型**
@@ -801,19 +810,20 @@ void AMyPlayerState::GetAbilitySystemComponent() const
 }
 ```
 
-3、给`APawn`添加`UFPAbilityManagerComponent`组件，并调用`UFPAbilityManagerComponent`的函数`ServerInitComp`和`ClientInitComp`初始化组件
+3、给`APawn`添加`UFPAbilityManagerComponent`组件，并调用`UFPAbilityManagerComponent`的函数`ServerInitComp`和`ClientInitComp`初始化组件，绑定委托执行死亡逻辑<br>
+如果使用了[FPOnlineSystem](#fponlinesystem)插件，则调用UFPOnlineFunctionLibrary::PawnDied重生
 
 ```c++
 // 服务器初始化组件，建议在APawn::PossessedBy中调用
-// @param InComp 能力系统组件
-// @param InAttributeSet 属性集
 // @param InSaveAttributes 属性存档数据，读取在服务器保存的属性数据，如果直接使用UFPAttributeSet，提供UFPAbilityFunctionLibrary::SaveDataToAttributeData转换
-void ServerInitComp(UFPAbilitySystemComponent* InComp, UFPAttributeSet* InAttributeSet, TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
+void ServerInitComp(TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
 
 // 客户端初始化组件，建议在APawn::OnRep_PlayerState中调用
-// @param InComp 能力系统组件
-// @param InAttributeSet 属性集
-void ClientInitComp(UFPAbilitySystemComponent* InComp, UFPAttributeSet* InAttributeSet);
+void ClientInitComp();
+
+// 死亡委托，绑定委托后执行执行自己的逻辑，比如死亡动画或者布娃娃，如果使用FPOnlineSystem调用UFPOnlineFunctionLibrary::PawnDied重生
+UPROPERTY(BlueprintAssignable, Category = "FPAbility")
+FFPAbilityDiedDelegate DiedDelegate;
 ```
 
 4、如果不直接使用`FPAttributeSet`，而是使用它的子类，必须重写`FPAttributeSet`的函数`InitaAttributeSaveData`
