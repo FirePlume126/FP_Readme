@@ -100,6 +100,17 @@ static void RemoveInputMappings(AActor* InActor);
 template<class UserClass, typename FuncType>
 static uint32 BindInputAction(UInputComponent* InInputComponent, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func);
 
+// 绑定GAS输入，建议在ACS中调用，重复绑定时(InputTag、TriggerEvent和绑定函数的类相同)，会覆盖旧的绑定(旧的绑定会移除)
+// @param InInputComponent 输入组件，APlayerController的输入组件会调用DefaultInputConfig，否则调用AbilityInputConfig
+// @param InputTag 输入标签需要在项目设置AbilityInputConfig中设置
+// @param TriggerEvent 触发器事件
+// @param Object 绑定函数的类，建议在ACS中调用
+// @param Func 绑定的函数
+// @param AbilitySpecHandle 能力规格句柄
+// @param bActivate 为true是激活能力，为false时关闭能力
+template<class UserClass, typename FuncType>
+static uint32 BindGASInput(UInputComponent* InInputComponent, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func, const FGameplayAbilitySpecHandle AbilitySpecHandle, bool bActivate);
+
 // 解除能力绑定
 static void RemoveAbilityBind(UInputComponent* InInputComponent, uint32 InBindHandle);
 
@@ -805,8 +816,9 @@ FFPAbilityDiedDelegate DiedDelegate;
 // 添加图片/////////////////////////
 
 <a name="fpabilitysystem-abilityinput"></a>
-6、本地调用`UFPAbilityManagerComponent`的函数`BindAbilityInput`通过读取**能力属性配置**的`AbilityInputMap`自动绑定能力输入，死亡时移除所有能力输入；
-也可以通过调用`UFPAbilitySystemComponent`的函数`BindAbilityInput`或`UFPAbilityBase`的函数`BindInput`绑定输入
+6、本地调用`UFPAbilityManagerComponent`的函数`BindAbilityInput`，通过读取**能力属性配置**的`AbilityInputMap`自动绑定能力输入，死亡时移除所有能力输入；
+`AbilityInputMap`添加`"FPAbility.Ability.ConfirmCancel"`会自动绑定能力的确认和取消输入；
+也可以通过调用`UFPAbilitySystemComponent`的函数`BindAbilityInput`绑定输入
 
 ```c++
 // UFPAbilityManagerComponent的函数
@@ -815,11 +827,7 @@ void BindAbilityInput();
 
 // UFPAbilitySystemComponent的函数
 // 绑定能力输入
-void BindAbilityInput(UInputComponent* InInputComponent, TSubclassOf<UGameplayAbility> InAbilityToActivate, const FFPAbilityInputs& InAbilityInputs);
-
-// UFPAbilityBase的函数
-// 绑定输入
-void BindInput(UInputComponent* InInputComponent, const FFPAbilityInputs& InAbilityInputs);
+void BindAbilityInput(TSubclassOf<UGameplayAbility> InAbilityClass, const FFPAbilityInputs& InAbilityInputs);
 ```
 
 7、`UFPAbilityManagerComponent`还提供了一些小功能，比如：眩晕会取消主动能力、被攻击时根据攻击方向播放不同的动画、显示伤害数字的接口
