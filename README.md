@@ -662,9 +662,9 @@ UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"), Categ
 static int32 GetServerTimeSeconds(const UObject* WorldContextObject);
 
 // 玩家或AI死亡时调用
-// @param RespawnDelay 复活时间，等于0时不复活
+// @param RespawnDelay 复活时间，等于0时立即复活
 UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"), Category = "FPOnline")
-static void PawnDied(const UObject* WorldContextObject, AController* InController, float RespawnDelay);
+static void PawnDied(const UObject* WorldContextObject, AController* InController, float InRespawnDelay = 0.0f);
 
 // 设置玩家ID：本地调用，可以通过APlayerState获取玩家ID
 UFUNCTION(BlueprintCallable, meta = (WorldContext = "WorldContextObject"), Category = "FPOnline")
@@ -750,11 +750,12 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 |类名|描述|
 |:-:|:-:|
 |FPAbilitySystemComponent|能力系统组件，玩家添加给`APlayerState`，AI添加给`Pawn`|
-|FPAbilityManagerComponent|能力管理组件，添加给`APawn`。<br>优先检测`APlayerState`的`UFPAbilitySystemComponent`(玩家)，<br>不存在时检测`APawn`的`UFPAbilitySystemComponent`(AI)。<br>服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和**玩家存档**初始化属性和能力，本地玩家通过[能力属性配置](#fpabilitysystem-attributeconfig)自动绑定按键输入，也可以手动[绑定能力输入](#fpabilitysystem-abilityinput)|
-|FPAbilityBase|能力基类，能力必须继承此类，此类提供了输入绑定，并可以通过`FGameplayTag`读取[能力模型](#fpabilitysystem-abilitymodel)来构造能力|
-|FPAttributeSet|管理属性，玩家添加给`APlayerState`，AI添加给`Pawn`。插件提供了[属性集](#fpabilitysystem-attributeset)。<br>可以继承此类添加属性，但必须重写它的函数`InitaAttributeSaveData`|
-|FPAbilityDamageCalculation|[伤害计算](#fpabilitysystem-damagecalculation)|
-|FPAbilityCheatManager|作弊管理器，用来管理[调试指令](#fpabilitysystem-debug)，添加给`APlayerController`|
+|FPAbilityManagerComponent|能力管理组件，添加给`APawn`。<br>服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和**玩家存档**初始化属性和能力，本地玩家通过[能力属性配置](#fpabilitysystem-attributeconfig)自动绑定按键输入，也可以手动[绑定能力输入](#fpabilitysystem-abilityinput)。<br>优先检测`APlayerState`的`UFPAbilitySystemComponent`(玩家)，<br>不存在时检测`APawn`的`UFPAbilitySystemComponent`(AI)|
+|FPAbilityBase|能力基类，可以通过`FGameplayTag`读取[能力模型](#fpabilitysystem-abilitymodel)来构造能力|
+|FPAttributeSetBase|属性集基类，请继承此类创建自己的属性。为了配合`FPAbilityManagerComponent`使用，玩家添加给`APlayerState`，AI添加给`Pawn`|
+|FPAttributeSet|我自己使用的[属性集](#fpabilitysystem-attributeset)，仅供参考，使用自己的属性集，请继承`FPAttributeSetBase`|
+|FPAbilityDamageCalculation|能力[伤害计算](#fpabilitysystem-damagecalculation)|
+|FPAbilityCheatManager|作弊管理器。基于`FPAttributeSet`仅供参考，用来管理[调试指令](#fpabilitysystem-debug)，添加给`APlayerController`|
 
 <a name="fpabilitysystem-abilitymodel"></a>
 * **能力模型**
@@ -791,18 +792,18 @@ public:
 
 // 添加图片/////////////////////////
 
-3、调用`UFPAbilityManagerComponent`的函数`ServerInitComp`和`ClientInitComp`初始化组件，绑定委托执行死亡逻辑，<br>
-如果使用了[FPOnlineSystem](#fponlinesystem)插件，则调用UFPOnlineFunctionLibrary::PawnDied重生。
+3、调用`UFPAbilityManagerComponent`的函数`ServerInitComp()`和`ClientInitComp()`初始化组件，绑定委托执行死亡逻辑，<br>
+如果使用了[FPOnlineSystem](#fponlinesystem)插件，则调用UFPOnlineFunctionLibrary::PawnDied()重生。
 
 ```c++
 // 服务器初始化组件，建议在APawn::PossessedBy中调用
-// @param InSaveAttributes 属性存档数据，读取在服务器保存的属性数据，如果直接使用UFPAttributeSet，提供UFPAbilityFunctionLibrary::SaveDataToAttributeData转换
+// @param InSaveAttributes 属性存档数据，读取在服务器保存的属性数据，如果直接使用UFPAttributeSet，提供UFPAbilityFunctionLibrary::SaveDataToAttributeData()转换
 void ServerInitComp(TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
 
 // 客户端初始化组件，建议在APawn::OnRep_PlayerState中调用
 void ClientInitComp();
 
-// 死亡委托，绑定委托后执行执行自己的逻辑，比如死亡动画或者布娃娃，如果使用FPOnlineSystem调用UFPOnlineFunctionLibrary::PawnDied重生
+// 死亡委托，绑定委托后执行执行自己的逻辑，比如死亡动画或者布娃娃，如果使用FPOnlineSystem调用UFPOnlineFunctionLibrary::PawnDied()重生
 UPROPERTY(BlueprintAssignable, Category = "FPAbility")
 FFPAbilityDiedDelegate DiedDelegate;
 ```
@@ -817,7 +818,7 @@ FFPAbilityDiedDelegate DiedDelegate;
 
 <a name="fpabilitysystem-abilityinput"></a>
 6、本地调用`UFPAbilityManagerComponent`的函数`BindAbilityInput`，通过读取**能力属性配置**的`AbilityInputMap`自动绑定能力输入，死亡时移除所有能力输入；
-`AbilityInputMap`添加`"FPAbility.Ability.ConfirmCancel"`会自动绑定能力的确认和取消输入；
+`AbilityInputMap`添加`"FPAbility.Ability.Active.ConfirmCancel"`会自动绑定能力的确认和取消输入；
 也可以通过调用`UFPAbilitySystemComponent`的函数`BindAbilityInput`绑定输入
 
 ```c++
