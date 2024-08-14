@@ -62,7 +62,7 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 ### FPInput
 
 管理输入(仅用于C++)，绑定输入、更改绑定按键。
-`UFPInputComponent`是该模块的主要类，它继承于`UEnhancedInputComponent`，在`UFPInputComponent`中管理绑定的游戏标签、触发状态和委托，重复绑定时(`UInputAction`和`ETriggerEvent`和绑定函数的类相同)，会覆盖旧的绑定(旧的绑定会移除)。
+`UFPInputComponent`是该模块的主要类，它继承于`UEnhancedInputComponent`，在`UFPInputComponent`中管理`FGameplayTag`和输入委托，重复绑定时(`UInputAction`和`ETriggerEvent`和绑定函数的对象相同)，会覆盖旧的绑定(旧的绑定会移除)。
 
 * **使用指南**
 
@@ -72,7 +72,7 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 
 |属性|数据类型|描述|
 |:-:|:-:|:-:|
-|DefaultInputConfig|`FFPInputConfig`|在`APlayerController`中绑定输入时，会自动调用`DefaultInputConfig`，生命周期和`APlayerController`一样，不建议手动解绑|
+|DefaultInputConfig|`FFPInputConfig`|在`APlayerController`中绑定输入时，会自动调用`DefaultInputConfig`，生命周期和`APlayerController`相同|
 |AbilityInputConfig|`FFPInputConfig`|在`APawn`中绑定输入时，会自动调用`AbilityInputConfig`|
 |Context|`UInputMappingContext`|输入映射上下文|
 |Priority|`int32`|优先级|
@@ -91,7 +91,7 @@ static void AddInputMappings(AActor* InActor);
 // @param InActor 输入APlayerController调用DefaultInputConfig，输入输入APawn调用AbilityInputConfig
 static void RemoveInputMappings(AActor* InActor);
 
-// 绑定输入动作，重复绑定时(InputTag、TriggerEvent和绑定函数的类相同)，会覆盖旧的绑定(旧的绑定会移除)
+// 绑定输入动作，重复绑定时(InputTag、TriggerEvent和绑定函数的对象相同)，会覆盖旧的绑定(旧的绑定会移除)
 // @param InInputComponent 输入组件，APlayerController的输入组件会调用DefaultInputConfig，否则调用AbilityInputConfig
 // @param InputTag 输入标签需要在项目设置DefaultInputConfig或AbilityInputConfig中设置
 // @param TriggerEvent 触发状态
@@ -100,7 +100,7 @@ static void RemoveInputMappings(AActor* InActor);
 template<class UserClass, typename FuncType>
 static uint32 BindInputAction(UInputComponent* InInputComponent, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func);
 
-// 绑定GAS输入，建议在ACS中调用，重复绑定时(InputTag、TriggerEvent和绑定函数的类相同)，会覆盖旧的绑定(旧的绑定会移除)
+// 绑定GAS输入，建议在ACS中调用，重复绑定时(InputTag、TriggerEvent和绑定函数的对象相同)，会覆盖旧的绑定(旧的绑定会移除)
 // @param InInputComponent 输入组件，APlayerController的输入组件会调用DefaultInputConfig，否则调用AbilityInputConfig
 // @param InputTag 输入标签需要在项目设置AbilityInputConfig中设置
 // @param TriggerEvent 触发器事件
@@ -296,13 +296,21 @@ void Walk();
 UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
 void Crouching();
 
-// 跳，bIsMantleCheck=true时可以检测攀爬
+// 可以跳
+UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
+bool CanJump() const;
+
+// 跳，当bIsMantleCheck=true时可以检测攀爬
 UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
 void Jump();
 
 // 停止跳，建议直接使用ACharacter::StopJumping
 UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
 void StopJump();
+
+// 可以冲刺
+UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
+bool CanSprint() const;
 
 // 冲刺
 UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
@@ -550,7 +558,7 @@ void AMyPlayerState::BanPlayerJoinGameForUI()
 }
 ```
 
-3、在`AGameModeBase`初始化服务器，在`APlayerController::OnUnPossess`中调用`AFPOnlinePlayerState::WriteSavePlayerData`。完成这些，存档功能就可以正常使用
+3、在`AGameModeBase`初始化服务器，在`APlayerController::OnUnPossess()`中调用`AFPOnlinePlayerState::WriteSavePlayerData()`。完成这些，存档功能就可以正常使用
 
 ```c++
 void AMyGameModeBase::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -749,16 +757,99 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 
 |类名|描述|
 |:-:|:-:|
-|FPAbilitySystemComponent|能力系统组件，玩家添加给`APlayerState`，AI添加给`Pawn`|
+|FPAbilitySystemComponent|能力系统组件，玩家添加给`APlayerState`，AI添加给`APawn`|
 |FPAbilityManagerComponent|能力管理组件，添加给`APawn`。<br>服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和**玩家存档**初始化属性和能力，本地玩家通过[能力属性配置](#fpabilitysystem-attributeconfig)自动绑定按键输入，也可以手动[绑定能力输入](#fpabilitysystem-abilityinput)。<br>优先检测`APlayerState`的`UFPAbilitySystemComponent`(玩家)，<br>不存在时检测`APawn`的`UFPAbilitySystemComponent`(AI)|
 |FPAbilityBase|能力基类，可以通过`FGameplayTag`读取[能力模型](#fpabilitysystem-abilitymodel)来构造能力|
 |FPAttributeSetBase|属性集基类，请继承此类创建自己的属性。为了配合`FPAbilityManagerComponent`使用，玩家添加给`APlayerState`，AI添加给`Pawn`|
-|FPAttributeSet|我自己使用的[属性集](#fpabilitysystem-attributeset)，仅供参考，使用自己的属性集，请继承`FPAttributeSetBase`|
-|FPAbilityDamageCalculation|能力[伤害计算](#fpabilitysystem-damagecalculation)|
+|FPAttributeSet|我使用的[属性集](#fpabilitysystem-attributeset)，仅供参考。请继承`FPAttributeSetBase`|
 |FPAbilityCheatManager|作弊管理器。基于`FPAttributeSet`仅供参考，用来管理[调试指令](#fpabilitysystem-debug)，添加给`APlayerController`|
 
 <a name="fpabilitysystem-abilitymodel"></a>
 * **能力模型**
+
+1、继承`FFPAbilityData`创建**能力模型**的数据表格，并把数据表格添加给`FPAbilitySystem`的项目设置
+
+```c++
+// 能力数据
+USTRUCT(BlueprintType)
+struct FFPAbilityData : public FTableRowBase
+{
+	GENERATED_BODY()
+
+public:
+
+#if WITH_EDITOR
+
+	virtual void OnDataTableChanged(const UDataTable* InDataTable, const FName InRowName) override;
+
+#endif
+
+	// 能力标签
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (Categories = "FPAbility.Ability"))
+	FGameplayTag Tag = FGameplayTag::EmptyTag;
+
+	// 能力类
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	TSoftClassPtr<UFPAbilityBase> Class = nullptr;
+
+	// 标签
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FFPAbilityTags Tags;
+
+	// 冷却
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FFPAbilityCooldown Cooldown;
+
+	// 消耗
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	TMap<FGameplayAttribute, FScalableFloat> Costs;
+
+	// 伤害
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	FFPAbilityDamage Damage;
+
+	// 图标
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	TSoftObjectPtr<UTexture2D> Icon = nullptr;
+
+private:
+
+	// 上次能力标签
+	UPROPERTY()
+	FGameplayTag LastTag = FGameplayTag::EmptyTag;
+};
+```
+
+2、C++中使用**能力模型**必须在构造函数中调用函数`UFPAbilityBase::ConstructAbility()`；<br>
+蓝图中使用可以通过修改变量`UFPAbilityBase::AbilityTag`读取**能力模型**，修改数据表格时也会同步修改蓝图，需要手动保存(我尝试通过UEditorAssetLibrary::SaveAsset()保存设置，但未打开蓝图时，会导致数据表格绑定委托未执行)
+
+```c++
+private:
+
+#if WITH_EDITORONLY_DATA
+
+	// 能力标签
+	UPROPERTY(EditDefaultsOnly, meta = (Categories = "FPAbility.Ability"), Category = "FPAbility|Tags")
+	FGameplayTag AbilityTag = FGameplayTag::EmptyTag;
+#endif
+
+protected:
+
+#if WITH_EDITOR
+
+	// 编辑更改属性后触发
+	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
+
+	// 蓝图构造能力
+	virtual void OnConstructAbility();
+
+#endif
+
+	// 构造能力，C++中使用能力模型必须在构造函数中调用此函数
+	void ConstructAbility(const FGameplayTag& InAbilityTag);
+```
+
+FPAbilityDamageCalculation 能力[伤害计算](#fpabilitysystem-damagecalculation)
 
 <a name="fpabilitysystem-attributeconfig"></a>
 * **能力属性配置**
