@@ -36,8 +36,8 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 	- [FPOnlineSystem](#fponlinesystem)：管理服务器和会话，处理服务器玩家存档并生成玩家
 	- [FPAbilitySystem](#fpabilitysystem)
 		- [FPAbilitySystem](#fpabilitysystem-fpabilitysystem)：管理角色属性和能力
-		- [FPAbilityCombo](#fpabilitysystem-fpabilitycombo)：技能组合
-		- [FPAbilityComboEditor](#fpabilitysystem-fpabilitycomboeditor)：技能组合编辑器
+		- [FPAbilityCombo](#fpabilitysystem-fpabilitycombo)：能力组合
+		- [FPAbilityComboEditor](#fpabilitysystem-fpabilitycomboeditor)：能力组合编辑器
 
 - Misc：此类插件包含简单游戏功能和用于存储资产
 	- [FPFeatures](#fpfeatures)：包含简单的游戏功能模块
@@ -1143,7 +1143,7 @@ UFUNCTION(BlueprintCallable, Category = "FPAbility")
 static TArray<FActiveGameplayEffectHandle> ApplyDamage(AActor* InAvatarActor, TArray<FGameplayEffectSpecHandle> InSpecHandles);
 
 // 获取命中反应方向
-// @param InTarget 目标技能管理组件
+// @param InTarget 目标能力管理组件
 // @param InImpactPoint 被攻击的位置
 UFUNCTION(BlueprintPure, Category = "FPAbility|Damage")
 static const FGameplayTag GetHitReactDirectionTag(UFPAbilityManagerComponent* InTarget, const FVector& InImpactPoint);
@@ -1237,12 +1237,49 @@ $MitigatedDamage = UnmitigatedDamage\times \dfrac{100}{100 + Armor}\times (1 -Re
 <a name="fpabilitysystem-fpabilitycombo"></a>
 ### FPAbilityCombo
 
-技能组合
+能力组合
+
+* **此模块的主要类**
+
+|类名|描述|
+|:-:|:-:|
+|FPAbilityTask_StartAbilityCombo|启动能力组合任务|
+|FPAbilityCombo|能力组合，将动画组合成连击动作|
+|FPAbilityComboNodeBase|能力组合节点基类|
+|FPAbilityComboNodeTrans|能力组合节点转换，处理节点转换|
+|FPAbilityComboNodeConduit|能力组合节点导管，建立分支|
+|FPAbilityComboNodeAnimBase|能力组合动画节点基类|
+|FPAbilityComboNodeEntry|能力组合开始节点|
+|FPAbilityComboNodeAnim|能力组合动画节点，用来添加动画序列或动画蒙太奇，网络环境仅支持动画蒙太奇|
+|FPAbilityComboNodeAnimBlueprint|能力组合动画蓝图节点|
 
 <a name="fpabilitysystem-fpabilitycomboeditor"></a>
 ### FPAbilityComboEditor
 
-技能组合编辑器
+能力组合编辑器
+
+* **此模块的主要类**
+
+|类名|描述|
+|:-:|:-:|
+|FPAbilityComboAssetTypeActions|能力组合资产类型操作，注册内容浏览器右键菜单的能力组合资产|
+|FPAbilityComboAnimNodeAssetTypeActions|能力组合动画节点资产类型操作，注册内容浏览器右键菜单的能力组合资产|
+|FPAbilityComboFactory|能力组合工厂|
+|FPAbilityComboAnimNodeFactory|能力组合动画节点工厂|
+|FPAbilityComboPanelNodeFactory|能力组合面板节点工厂|
+|FPAbilityComboAssetEditor|能力组合编译器设置|
+|FPAbilityComboPersonaBlueprintEditor|能力组合角色蓝图编辑器：可重复使用的角色功能，适用骨骼相关资产的资产编辑器|
+|FPAbilityComboAnimAssetBrowser|能力组合动画资产浏览器|
+|FPAbilityComboEditorToolbar|能力组合编辑器工具栏|
+|FPAbilityComboEdGraph|能力组合编辑器图形|
+|FPAbilityComboSchema|能力组合编辑器图形架构：定义和管理能力组合图形节点|
+|FPAbilityComboApplicationMode|能力组合应用程序模式，创建此模式的选项卡|
+|FPAbilityComboDebugger|能力组合调试器，编辑器播放时，可以在能力组合编辑器选择调试的对象进行调试|
+|FPAbilityComboEdNodeBase|能力组合编辑器节点基类|
+|FPAbilityComboEdNodeEntry|能力组合编辑器开始节点|
+|FPAbilityComboEdNodeConduit|能力组合编辑器节点导管，建立分支|
+|FPAbilityComboEdNodeTrans|能力组合编辑器节点转换|
+|FPAbilityComboEdNodeAnim|能力组合编辑器动画节点|
 
 <a name="fpfeatures"></a>
 ## FPFeatures
@@ -1337,9 +1374,9 @@ void LocalSortItems(UFPInventoryComponent* InTargetInventoryComp = nullptr);
 
 非自制资产，除此之外的**美术**和所有**程序**均为自制
 
-|资产类型|数量|资产来源|
-|:-:|:-:|:-:|
-|字体|1|[Source Han Sans](https://www.github.com/adobe-fonts/source-han-sans)|
-|动画序列|93|[Advanced Locomotion System V4](https://www.unrealengine.com/marketplace/product/advanced-locomotion-system-v1)|
-|音频_脚步|16|[Advanced Locomotion System V4](https://www.unrealengine.com/marketplace/product/advanced-locomotion-system-v1)|
-|图标_鼠标|9|[Lyra Starter Game](https://www.unrealengine.com/marketplace/product/lyra)|
+|资产类型|数量|资产来源|使用资产模块|
+|:-:|:-:|:-:|:-:|
+|字体|1|[Source Han Sans](https://www.github.com/adobe-fonts/source-han-sans)|[FPAssets](#fpassets)|
+|动画序列|93|[Advanced Locomotion System V4](https://www.unrealengine.com/marketplace/product/advanced-locomotion-system-v1)|[FPMovementSystem](#fpmovementsystem)|
+|音频_脚步|16|[Advanced Locomotion System V4](https://www.unrealengine.com/marketplace/product/advanced-locomotion-system-v1)|[FPMovementSystem](#fpmovementsystem)|
+|图标_鼠标|9|[Lyra Starter Game](https://www.unrealengine.com/marketplace/product/lyra)|[FPUI](#fpcommon-fpui)|
