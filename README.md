@@ -117,6 +117,9 @@ static uint32 BindGASInput(UInputComponent* InInputComponent, const FGameplayTag
 // 解除能力绑定
 static void RemoveAbilityBind(UInputComponent* InInputComponent, uint32 InBindHandle);
 
+// 通过绑定数据解除能力绑定
+static void RemoveAbilityInputForBindingInfo(UInputComponent* InInputComponent, const FFPInputBindingInfo& InAction);
+
 // 解除所以能力绑定
 static void RemoveAllAbilityBinds(UInputComponent* InInputComponent);
 
@@ -759,11 +762,169 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 |:-:|:-:|
 |FPAbilitySystemComponent|能力系统组件，玩家添加给`APlayerState`，AI添加给`APawn`|
 |FPAbilityManagerComponent|能力管理组件，添加给`APawn`。<br>服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和**玩家存档**初始化属性和能力，本地玩家通过[能力属性配置](#fpabilitysystem-attributeconfig)自动绑定按键输入，也可以手动[绑定能力输入](#fpabilitysystem-abilityinput)。<br>优先检测`APlayerState`的`UFPAbilitySystemComponent`(玩家)，<br>不存在时检测`APawn`的`UFPAbilitySystemComponent`(AI)|
-|FPAbilityBase|能力基类，通过`FGameplayTag`读取[能力模型](#fpabilitysystem-abilitymodel)来构造能力。C++使用[能力模型](#fpabilitysystem-abilitymodel)必须在构造函数调用函数`UFPAbilityBase::ConstructAbility()`；蓝图能力添加到[能力模型](#fpabilitysystem-abilitymodel)，修改数据表格时也会同步修改蓝图，数据表格保存时也会同步保存蓝图|
+|FPAbilityBase|能力基类，能力添加到[能力模型](#fpabilitysystem-abilitymodel)统一管理|
 |FPAttributeSetBase|属性集基类，继承此类创建自己的[属性集](#fpabilitysystem-attributeset)。为了配合`FPAbilityManagerComponent`使用，玩家添加给`APlayerState`，AI添加给`Pawn`|
+
+* **FPAbilitySystem**项目设置
+
+|属性|数据类型|描述|
+|:-:|:-:|:-:|
+|AttributeConfig|`TSoftObjectPtr<UDataTable>`|[能力属性配置](#fpabilitysystem-attributeconfig)|
+|CommonAbilityModel|`TSoftObjectPtr<UDataTable>`|通用[能力模型](#fpabilitysystem-abilitymodel)，管理所有Pawn都可以使用的能力|
+|AbilityMapTable|`TSoftObjectPtr<UFPAbilityMapTable>`|[能力映射表](#fpabilitysystem-maptable)，管理所有能力映射，插件已设置好，不建议修改|
+|CooldownGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|冷却GE类，所有能力都使用此GE，插件已设置好，不建议修改|
+|CostGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|消耗GE类，，所有能力都使用此GE，插件已设置好，不建议修改|
+|DamageGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|伤害GE类，，所有能力都使用此GE，插件已设置好，不建议修改|
+|FullStateGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|状态一直全满GE类，控制台输入"FP_FullState (bool)"启动GE，根据自己的需求添加|
+
+![FPAbilitySystemSettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilitySystemSettings.png)
+
+<a name="fpabilitysystem-attributeconfig"></a>
+* **能力属性配置**
+
+**使用建议**：[能力属性配置](#fpabilitysystem-attributeconfig)数据表格的每一行对应一个骨骼或者角色，并对应一种[能力模型](#fpabilitysystem-abilitymodel)
+
+1、继承`FFPAbilityAttributeConfig`创建**能力属性配置**的数据表格
+
+```c++
+// 能力属性配置
+USTRUCT(BlueprintType)
+struct FFPAbilityAttributeConfig : public FTableRowBase
+{
+	GENERATED_BODY()
+
+public:
+
+	// 默认属性
+	UPROPERTY(EditDefaultsOnly)
+	TMap<FGameplayAttribute, FGameplayEffectModifierMagnitude> DefaultAttributes;
+
+	// 默认应用的效果
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	TArray<TSubclassOf<UGameplayEffect>> DefaultEffects;
+
+	// 能力模型，管理能力数据
+	UPROPERTY(config, EditAnywhere, meta = (RequiredAssetDataTags = "RowStructure=/Script/FPAbilitySystem.FPAbilityData"), Category = "Ability")
+	TSoftObjectPtr<UDataTable> AbilityModel;
+
+	// 能力的确认取消输入
+	UPROPERTY(EditDefaultsOnly, Category = "Ability")
+	FFPAbilityInput ConfirmCancelInput;
+
+	// 主动技能，FFPAbilityInput不为空时绑定输入，<能力标签，能力输入>
+	UPROPERTY(EditDefaultsOnly, meta = (Categories = "FPAbility.Ability.Active"), Category = "Ability")
+	TMap<FGameplayTag, FFPAbilityInput> ActiveAbilities;
+
+	// 被动技能
+	UPROPERTY(EditDefaultsOnly, meta = (Categories = "FPAbility.Ability.Passive"), Category = "Ability")
+	TArray<FGameplayTag> PassiveAbilities;
+};
+```
+
+2、给`APawn`添加`UFPAbilityManagerComponent`组件，然后通过**能力属性配置**的**行命名**选择对应的配置，此`APawn`会根据选择的配置进行初始化
+
+![FPAbilitySystem_AbilityManager](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilitySystem_AbilityManager.png)
+
+3、服务器和客户端分别调用`UFPAbilityManagerComponent::ServerInitComp()`和`UFPAbilityManagerComponent::ClientInitComp()`初始化组件，绑定委托执行死亡逻辑<br>
+如果使用了[FPOnlineSystem](#fponlinesystem)插件，则调用UFPOnlineFunctionLibrary::PawnDied()重生。
+
+```c++
+// 服务器初始化组件，建议在APawn::PossessedBy中调用
+// @param InSaveAttributes 属性存档数据，读取在服务器保存的属性数据，如果直接使用
+void ServerInitComp(TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
+
+// 客户端初始化组件，建议在APawn::OnRep_PlayerState中调用
+void ClientInitComp();
+
+// 接收伤害命中反应，源和目标都可接收到委托。可以播放被击反应的动画和声音，也用来显示伤害数字
+UPROPERTY(BlueprintAssignable, Category = "FPAbility")
+FFPAbilityReceiveDamageHitReactDelegate ReceiveDamageHitReactDelegate;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFPAbilityDiedDelegate, APawn*, Pawn);
+
+// 死亡委托，绑定委托后执行执行自己的逻辑，比如死亡动画或者布娃娃，如果使用FPOnlineSystem调用UFPOnlineFunctionLibrary::PawnDied()重生
+UPROPERTY(BlueprintAssignable, Category = "FPAbility")
+FFPAbilityDiedDelegate DiedDelegate;
+```
+
+4、服务器读取**能力属性配置**的`DefaultAttributes`和`DefaultEffects`初始化属性。死亡会添加死亡标签用来判断是否为复活，复活仅恢复属性(血量、耐力和能量)，不重复初始化
+
+5、添加[能力模型](#fpabilitysystem-abilitymodel)，管理此`APawn`的所有能力
+
+6、服务器读取**能力属性配置**`ActiveAbilities`和`PassiveAbility`的**能力标签**，**能力标签**读取[能力模型](#fpabilitysystem-abilitymodel)初始化能力，在死亡时会移除添加的能力
+
+```c++
+// UFPAbilityManagerComponent的函数↓↓↓
+
+// 移除所有能力，服务器调用
+void RemoveAbilities();
+
+// 给予能力，服务器调用
+FGameplayAbilitySpecHandle GiveAbility(const FGameplayTag& InAbilityTag);
+
+// 清除能力，服务器调用
+void ClearAbility(const FGameplayTag& InAbilityTag);
+
+// 查找能力类，优先查找能力模型，其次查找通用能力模型
+TSoftClassPtr<UFPAbilityBase> FindAbilityClass(const FGameplayTag& InAbilityTag) const;
+```
+
+<a name="fpabilitysystem-abilityinput"></a>
+6、本地调用`UFPAbilityManagerComponent::InitAbilityInput()`，通过读取**能力属性配置**的`ActiveAbilities`和`ConfirmCancelInput`自动绑定能力输入，死亡时移除所有能力输入；
+也可以通过函数`UFPAbilityManagerComponent`的函数手动绑定输入。
+
+```c++
+// 能力输入
+USTRUCT(BlueprintType)
+struct FFPAbilityInput
+{
+	GENERATED_BODY()
+
+public:
+
+	// 激活能力输入标签
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (Categories = "FPInput.Ability"))
+	FGameplayTag ActivateInputTag;
+
+	// 激活能力触发事件
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	ETriggerEvent ActivateTriggerEvent = ETriggerEvent::Started;
+
+	// 取消能力输入标签
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (Categories = "FPInput.Ability"))
+	FGameplayTag CancelInputTag;
+
+	// 取消能力触发事件
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	ETriggerEvent CancelTriggerEvent = ETriggerEvent::Started;
+
+	// 是否有效
+	FORCEINLINE bool IsValid() const
+	{
+		return ActivateInputTag.IsValid() || CancelInputTag.IsValid();
+	}
+};
+
+// UFPAbilityManagerComponent的函数↓↓↓
+
+// 初始化能力输入，建议在APawn::SetupPlayerInputComponent中调用
+void InitAbilityInput();
+
+// 移除所有能力输入，本地调用
+void RemoveAllAbilityInput();
+
+// 绑定能力输入，按键被使用时会自动解绑之前的能力，本地调用
+void BindAbilityInput(const FGameplayTag& InAbilityTag, const FFPAbilityInput& InAbilityInput);
+
+// 解除此按键绑定的技能，本地调用
+void RemoveAbilityInput(const FFPAbilityInput& InAbilityInput);
+```
 
 <a name="fpabilitysystem-abilitymodel"></a>
 * **能力模型**
+
+**能力模型**用于管理配置能力，修改数据表格时会同步修改蓝图，数据表格保存时也会同步保存蓝图，同时也会更新保存[能力映射表](#fpabilitysystem-maptable)，从而影响C++能力构造。<br>
+将能力模型添加给[能力属性配置](#fpabilitysystem-attributeconfig)就可以通过[能力属性配置](#fpabilitysystem-attributeconfig)数据表格的Key和能力的FGameplayTag查询能力(详见：[能力函数库](#fpabilitysystem-functionlibrary))
 
 1、继承`FFPAbilityData`创建**能力模型**的数据表格
 
@@ -832,20 +993,7 @@ private:
 };
 ```
 
-2、把创建好的**能力模型**数据表格添加给`FPAbilitySystem`的项目设置。`CooldownGameplayEffectClass`(冷却GE类)、`CostGameplayEffectClass`(消耗GE类)和`DamageGameplayEffectClass`(伤害GE类)是所有能力复用的`UGameplayEffect`
-
-![FPAbilitySystem_AbilitySettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilitySystem_AbilitySettings.png)
-
-3、能力必须继承`UFPAbilityBase`，C++使用**能力模型**必须在构造函数调用函数`UFPAbilityBase::ConstructAbility()`<br>
-蓝图能力类添加到**能力模型**，修改数据表格时也会同步修改蓝图，数据表格保存时也会同步保存蓝图
-
-```c++
-// 构造能力，C++中使用能力模型必须在构造函数中调用此函数
-// @param InAbilityTag 能力标签，要和能力模型的Tag对应
-virtual void ConstructAbility(const FGameplayTag& InAbilityTag);
-```
-
-4、在**能力模型**添加能力标签容器
+2、在**能力模型**添加能力标签容器
 
 ```c++
 // 能力标签
@@ -894,7 +1042,7 @@ public:
 };
 ```
 
-5、在**能力模型**添加能力冷却和消耗，可以根据自己的[属性集](#fpabilitysystem-attributeset)添加消耗的属性
+3、在**能力模型**添加能力冷却和消耗，可以根据自己的[属性集](#fpabilitysystem-attributeset)添加消耗的属性
 
 ```c++
 // 能力冷却
@@ -919,7 +1067,7 @@ UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 TMap<FGameplayAttribute, FScalableFloat> Costs;
 ```
 
-6、在**能力模型**添加能力伤害，调用函数`UFPAbilityBase::MakeDamageGameplayEffectSpecHandles()`返回的`TArray<FGameplayEffectSpecHandle>`，给目标应用伤害调用函数`UFPAbilityFunctionLibrary::ApplyDamage()`<br>
+4、在**能力模型**添加能力伤害，调用函数`UFPAbilityBase::MakeDamageGameplayEffectSpecHandles()`返回的`TArray<FGameplayEffectSpecHandle>`，给目标应用伤害调用函数`UFPAbilityFunctionLibrary::ApplyDamage()`<br>
 **伤害类型标签**：标签为空时，为普通[伤害计算](#fpabilitysystem-damagecalculation)。插件提供了`百分比伤害`、`真实伤害`和`伤害反馈`,
 添加`伤害反馈`标签后会播放受击动画、声音等，绑定委托实现`UFPAbilityManagerComponent::ReceiveDamageHitReactDelegate`<br>
 **伤害给与目标的效果**：如着火、眩晕等
@@ -965,121 +1113,103 @@ UPROPERTY(BlueprintAssignable, Category = "FPAbility")
 FFPAbilityReceiveDamageHitReactDelegate ReceiveDamageHitReactDelegate;
 ```
 
-<a name="fpabilitysystem-attributeconfig"></a>
-* **能力属性配置**
+<a name="fpabilitysystem-maptable"></a>
+* **能力映射表**
 
-1、继承`FFPAttributeConfig`创建**能力属性配置**的数据表格
+管理所有能力映射，[能力属性配置](#fpabilitysystem-attributeconfig)或任何[能力模型](#fpabilitysystem-abilitymodel)保存时自动更新(不支持手动修改)<br>
+
+1、**功能**<br>
+(1)、通过游戏标签查询能力(每个Pwan除了可以使用自己专用的[能力模型](#fpabilitysystem-abilitymodel)还可以使用通用[能力模型](#fpabilitysystem-abilitymodel))；
+(2)、[能力模型](#fpabilitysystem-abilitymodel)保存时，检测保存的[能力模型](#fpabilitysystem-abilitymodel)和其他[能力模型](#fpabilitysystem-abilitymodel)的能力是否有重复，有重复会弹窗提示；
+(3)、用于构造C++能力(蓝图会自己更新保存)
+
+2、**能力映射表**的数据资产继承的类
 
 ```c++
-// 能力属性配置
+// 能力映射
 USTRUCT(BlueprintType)
-struct FFPAbilityAttributeConfig : public FTableRowBase
+struct FFPAbilityMap
 {
 	GENERATED_BODY()
 
 public:
 
-	// 默认属性
-	UPROPERTY(EditDefaultsOnly)
-	TMap<FGameplayAttribute, FGameplayEffectModifierMagnitude> DefaultAttributes;
-
-	// 默认应用的效果
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	TArray<TSubclassOf<UGameplayEffect>> DefaultEffects;
-
-	//  能力输入映射，<能力标签，能力输入>
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (Categories = "FPAbility.Ability.Active"))
-	TMap<FGameplayTag, FFPAbilityInputs> AbilityInputMap;
+	// 能力映射
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	TMap<FGameplayTag, TSoftClassPtr<UFPAbilityBase>> Abilities;
 };
-```
 
-2、把创建好的**能力属性配置**数据表格添加给`FPAbilitySystem`的项目设置。根据项目需求设置`MaxLevel`(最大等级)、`XPBaseValue`(角色1级升级时所需的经验，其他等级通过计算)、`LevelUpPoints`(升级提供的属性点)和`MaxPoints`(单个属性的最大点数)
-
-![FPAbilitySystem_AttributeSettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilitySystem_AttributeSettings.png)
-
-3、给`APawn`添加`UFPAbilityManagerComponent`组件，然后通过**能力属性配置**的**行命名**选择对应的配置，此`APawn`会根据选择的配置进行初始化
-
-![FPAbilitySystem_AbilityManager](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilitySystem_AbilityManager.png)
-
-3、服务器和客户端分别调用`UFPAbilityManagerComponent::ServerInitComp()`和`UFPAbilityManagerComponent::ClientInitComp()`初始化组件，绑定委托执行死亡逻辑<br>
-如果使用了[FPOnlineSystem](#fponlinesystem)插件，则调用UFPOnlineFunctionLibrary::PawnDied()重生。
-
-```c++
-// 服务器初始化组件，建议在APawn::PossessedBy中调用
-// @param InSaveAttributes 属性存档数据，读取在服务器保存的属性数据，如果直接使用
-void ServerInitComp(TMap<FGameplayAttribute, FScalableFloat> InSaveAttributes);
-
-// 客户端初始化组件，建议在APawn::OnRep_PlayerState中调用
-void ClientInitComp();
-
-// 接收伤害命中反应，源和目标都可接收到委托。可以播放被击反应的动画和声音，也用来显示伤害数字
-UPROPERTY(BlueprintAssignable, Category = "FPAbility")
-FFPAbilityReceiveDamageHitReactDelegate ReceiveDamageHitReactDelegate;
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFPAbilityDiedDelegate, APawn*, Pawn);
-
-// 死亡委托，绑定委托后执行执行自己的逻辑，比如死亡动画或者布娃娃，如果使用FPOnlineSystem调用UFPOnlineFunctionLibrary::PawnDied()重生
-UPROPERTY(BlueprintAssignable, Category = "FPAbility")
-FFPAbilityDiedDelegate DiedDelegate;
-```
-
-4、服务器读取**能力属性配置**的`DefaultAttributes`和`DefaultEffects`初始化属性。死亡会添加死亡标签用来判断是否为复活，复活仅恢复属性(血量、耐力和能量)，不重复初始化
-
-5、服务器读取**能力属性配置**`AbilityInputMap`的**能力标签**，**能力标签**读取[能力模型](#fpabilitysystem-abilitymodel)初始化能力，在死亡时会移除添加的能力
-
-```c++
-// 能力输入
+// 能力模型映射
 USTRUCT(BlueprintType)
-struct FFPAbilityInput
+struct FFPAbilityModelMap
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 
 public:
 
-	// 输入标签
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (Categories = "FPInput.Ability"))
-	FGameplayTag InputTag;
+	// 行句柄
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	FDataTableRowHandle RowHandle;
 
-	// 触发事件
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	ETriggerEvent TriggerEvent = ETriggerEvent::Started;
+	// 是否为蓝图类
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	bool bIsBlueprintClass = false;
 };
 
-// 能力输入
-USTRUCT(BlueprintType)
-struct FFPAbilityInputs
+// 能力映射表
+UCLASS()
+class FPABILITYSYSTEM_API UFPAbilityMapTable : public UDataAsset
 {
 	GENERATED_BODY()
 
+protected:
+
+	// 能力映射，通过游戏标签查询能力
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (EditCondition = "false"), Category = "Config")
+	TMap<FName, FFPAbilityMap> AbilityMaps;
+
+	// 通用能力映射，所有Pawn都可以使用的能力
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (EditCondition = "false"), Category = "Config")
+	FFPAbilityMap CommonAbilityMap;
+
+	// 能力模型映射；1、能力模型保存时，检测所有能力模型的能力是否有重复；2、用于构造C++能力(蓝图会自己更新保存)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, meta = (EditCondition = "false"), Category = "Config")
+	TMap<FSoftClassPath, FFPAbilityModelMap> AbilityModelMaps;
+
 public:
 
-	// 激活能力输入
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FFPAbilityInput ActivateInput;
+	// 查找能力映射
+	// @param InKey UFPAbilityProjectSettings::AttributeConfig数据表格的Key
+	const FFPAbilityMap* FindAbilityMap(const FName& InKey) const;
 
-	// 取消能力输入
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FFPAbilityInput CancelInput;
+	// 获取通用能力映射
+	const FFPAbilityMap* GetCommonAbilityMap() const;
+
+	// 查找能力类
+	// @param InKey UFPAbilityProjectSettings::AttributeConfig数据表格的Key
+	// @param InAbilityTag 能力标签
+	TSoftClassPtr<UFPAbilityBase> FindAbilityClass(const FName& InKey, const FGameplayTag& InAbilityTag) const;
+
+	// 查找能力数据
+	// @param InAbilityClass 能力类
+	// @param bCppOnly bCppOnly = true时，仅获取C++能力的数据
+	const FFPAbilityData* FindAbilityData(UFPAbilityBase* InAbilityClass, bool bCppOnly = true) const;
+
+#if WITH_EDITOR
+
+	// 添加能力映射
+	// @param InDataTable 数据表格需继承FFPAbilityAttributeConfig
+	void AddAbilityMaps(UDataTable* InDataTable);
+
+	// 添加通用能力映射
+	// @param InAbilityModel 能力模型，数据表格需继承FFPAbilityData
+	void AddCommonAbilityMap(UDataTable* InAbilityModel);
+
+	// 添加能力模型映射
+	// @param InAbilityModel 能力模型，数据表格需继承FFPAbilityData
+	void AddAbilityModelMap(UDataTable* InAbilityModel);
+#endif
 };
-
-```
-
-<a name="fpabilitysystem-abilityinput"></a>
-6、本地调用`UFPAbilityManagerComponent::BindAbilityInput()`，通过读取**能力属性配置**的`AbilityInputMap`自动绑定能力输入，死亡时移除所有能力输入；
-也可以通过函数`UFPAbilitySystemComponent::BindAbilityInput()`绑定输入。
-`AbilityInputMap`的`Kye`添加`"FPAbility.Ability.Active.ConfirmCancel"`会自动绑定能力的确认和取消输入
-
-```c++
-// UFPAbilityManagerComponent的函数↓↓↓
-// 绑定能力输入，建议在APawn::SetupPlayerInputComponent中调用
-void BindAbilityInput();
-
-// 移除能力输入
-void RemoveAbilityInput();
-
-// UFPAbilitySystemComponent的函数↓↓↓
-// 绑定能力输入
-void BindAbilityInput(TSubclassOf<UGameplayAbility> InAbilityClass, const FFPAbilityInputs& InAbilityInputs);
 ```
 
 * **使用指南**
@@ -1122,19 +1252,51 @@ virtual bool AddAttributePoints(const FGameplayAttribute& InAttribute, int32 New
 virtual void ApplyDamage(const FGameplayEffectModCallbackData& Data);
 ```
 
+<a name="fpabilitysystem-functionlibrary"></a>
 4、根据情况调用`UFPAbilityFunctionLibrary`的函数
 
 ```c++
-// 查找能力数据，必须在项目设置添加AbilityModel
-// @param InAbilityTag 能力标签
-// @param OutAbilityData 返回能力数据
-// @return 成功查找返回true
-UFUNCTION(BlueprintPure, meta = (DisplayName = "FindAbilityData"), Category = "FPAbility")
-static bool K2_FindAbilityData(UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag, FFPAbilityData& OutAbilityData);
+// 移除所有能力，服务器调用
+// @param InAvatarActor 目标AvatarActor
+UFUNCTION(BlueprintCallable, Category = "FPAbility")
+static void RemoveAbilities(AActor* InAvatarActor);
 
-// 查找能力数据，必须在项目设置添加AbilityModel
+// 给予能力，服务器调用
+// @param InAvatarActor 目标AvatarActor
 // @param InAbilityTag 能力标签
-static FFPAbilityData* FindAbilityData(const FGameplayTag& InAbilityTag);
+UFUNCTION(BlueprintCallable, Category = "FPAbility")
+static FGameplayAbilitySpecHandle GiveAbility(AActor* InAvatarActor, UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag);
+
+// 清除能力，服务器调用
+// @param InAvatarActor 目标AvatarActor
+// @param InAbilityTag 能力标签
+UFUNCTION(BlueprintCallable, Category = "FPAbility")
+static void ClearAbility(AActor* InAvatarActor, UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag);
+
+// 查找能力类，优先查找AvatarActor的能力模型，其次查找通用能力模型
+// @param InAvatarActor 目标AvatarActor
+// @param InAbilityTag 能力标签
+// @return 返回能力类
+UFUNCTION(BlueprintPure, Category = "FPAbility")
+static TSoftClassPtr<UFPAbilityBase> FindAbilityClass(AActor* InAvatarActor, UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag);
+
+// 移除所有能力输入，本地调用
+// @param InAvatarActor 目标AvatarActor
+UFUNCTION(BlueprintCallable, Category = "FPAbility")
+static void RemoveAllAbilityInput(AActor* InAvatarActor);
+
+// 绑定能力输入，按键被使用时会自动解绑之前的能力，本地调用
+// @param InAvatarActor 目标AvatarActor
+// @param InAbilityTag 能力标签
+// @param InAbilityInputs 能力输入
+UFUNCTION(BlueprintCallable, Category = "FPAbility")
+static void BindAbilityInput(AActor* InAvatarActor, UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag, const FFPAbilityInput& InAbilityInput);
+
+// 解除此按键绑定的技能，本地调用
+// @param InAvatarActor 目标AvatarActor
+// @param InAbilityInputs 能力输入
+UFUNCTION(BlueprintCallable, Category = "FPAbility")
+static void RemoveAbilityInput(AActor* InAvatarActor, const FFPAbilityInput& InAbilityInput);
 
 // 应用伤害
 // @param InAvatarActor 目标AvatarActor
@@ -1274,6 +1436,9 @@ $MitigatedDamage = UnmitigatedDamage\times \dfrac{100}{100 + Armor}\times (1 -Re
 |FPAbilityComboEdGraph|能力组合编辑器图形|
 |FPAbilityComboSchema|能力组合编辑器图形架构：定义和管理能力组合图形节点|
 |FPAbilityComboApplicationMode|能力组合应用程序模式，创建此模式的选项卡|
+|FPAbilityComboAnimAssetTabFactory|能力组合动画资产选项卡工厂|
+|FPAbilityComboGraphViewportTabFactory|能力组合图形视口选项卡工厂|
+|FPAbilityComboPropertyDetailsTabFactory|能力组合属性细节选项卡工厂|
 |FPAbilityComboDebugger|能力组合调试器，编辑器播放时，可以在能力组合编辑器选择调试的对象进行调试|
 |FPAbilityComboEdNodeBase|能力组合编辑器节点基类|
 |FPAbilityComboEdNodeEntry|能力组合编辑器开始节点|
