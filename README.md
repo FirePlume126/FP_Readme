@@ -35,7 +35,7 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 		- [FPMovementSystemEditor](#fpmovementsystem-fpmovementsystemeditor)：用来存放动画修改器
 	- [FPOnlineSystem](#fponlinesystem)：管理服务器和会话，处理服务器玩家存档并生成玩家
 	- [FPAbilitySystem](#fpabilitysystem)
-		- [FPAbilitySystem](#fpabilitysystem-fpabilitysystem)：管理角色属性和能力
+		- [FPAbilitySystem](#fpabilitysystem-fpabilitysystem)：管理属性和能力
 		- [FPAbilityCombo](#fpabilitysystem-fpabilitycombo)：能力组合
 		- [FPAbilityComboEditor](#fpabilitysystem-fpabilitycomboeditor)：能力组合编辑器
 
@@ -87,11 +87,11 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 
 ```c++
 // 绑定输入映射上下文，重复绑定时，会忽略新绑定
-// @param InActor 输入APlayerController调用DefaultInputConfig，输入输入APawn调用AbilityInputConfig
+// @param InActor 输入APlayerController调用DefaultInputConfig，输入其他AActor调用AbilityInputConfig
 static void AddInputMappings(AActor* InActor);
 
 // 解除输入映射上下文
-// @param InActor 输入APlayerController调用DefaultInputConfig，输入输入APawn调用AbilityInputConfig
+// @param InActor 输入APlayerController调用DefaultInputConfig，输入其他AActor调用AbilityInputConfig
 static void RemoveInputMappings(AActor* InActor);
 
 // 绑定输入动作，重复绑定时(InputTag、TriggerEvent和绑定函数的对象相同)，会覆盖旧的绑定(旧的绑定会移除)
@@ -103,7 +103,7 @@ static void RemoveInputMappings(AActor* InActor);
 template<class UserClass, typename FuncType>
 static uint32 BindInputAction(UInputComponent* InInputComponent, const FGameplayTag& InputTag, ETriggerEvent TriggerEvent, UserClass* Object, FuncType Func);
 
-// 绑定GAS输入，建议在ACS中调用，重复绑定时(InputTag、TriggerEvent和绑定函数的对象相同)，会覆盖旧的绑定(旧的绑定会移除)
+// 绑定GAS输入，重复绑定时(InputTag、TriggerEvent和绑定函数的对象相同)，会覆盖旧的绑定(旧的绑定会移除)
 // @param InInputComponent 输入组件，APlayerController的输入组件会调用DefaultInputConfig，否则调用AbilityInputConfig
 // @param InputTag 输入标签需要在项目设置AbilityInputConfig中设置
 // @param TriggerEvent 触发器事件
@@ -122,6 +122,12 @@ static void RemoveAbilityInputForBindingInfo(UInputComponent* InInputComponent, 
 
 // 解除所以能力绑定
 static void RemoveAllAbilityBinds(UInputComponent* InInputComponent);
+
+// 查找默认输入动作
+static const UInputAction* FindDefaultInputActionForTag(const FGameplayTag& InInputTag);
+
+// 查找能力输入动作
+static const UInputAction* FindAbilityInputActionForTag(const FGameplayTag& InInputTag);
 
 // 更改多个绑定，并应用保存
 // @param InMapping FName是映射名称，FKey是对应的按键
@@ -754,14 +760,14 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 <a name="fpabilitysystem-fpabilitysystem"></a>
 ### FPAbilitySystem
 
-管理角色属性和能力
+管理属性和能力，此模块基于GAS，输入基于[FPInput](#fpcommon-fpinput)
 
 * **此模块的主要类**
 
 |类名|描述|
 |:-:|:-:|
-|FPAbilitySystemComponent|能力系统组件，玩家添加给`APlayerState`，AI添加给`APawn`|
-|FPAbilityManagerComponent|能力管理组件，添加给`APawn`。<br>服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和**玩家存档**初始化属性和能力，本地玩家通过[能力属性配置](#fpabilitysystem-attributeconfig)自动绑定按键输入，也可以手动[绑定能力输入](#fpabilitysystem-abilityinput)。<br>优先检测`APlayerState`的`UFPAbilitySystemComponent`(玩家)，<br>不存在时检测`APawn`的`UFPAbilitySystemComponent`(AI)|
+|FPAbilitySystemComponent|能力系统组件，玩家添加给`APlayerState`，AI添加给`APawn`，并继承`IAbilitySystemInterface`接口，详见[使用指南](#fpabilitysystem-usageguide)|
+|FPAbilityManagerComponent|能力管理组件，添加给`APawn`。<br>服务器通过[能力属性配置](#fpabilitysystem-attributeconfig)和**玩家存档**初始化属性和能力，本地玩家通过[能力属性配置](#fpabilitysystem-attributeconfig)自动绑定按键输入，也可以手动[绑定能力输入](#fpabilitysystem-abilityinput)|
 |FPAbilityBase|能力基类，能力添加到[能力模型](#fpabilitysystem-abilitymodel)统一管理|
 |FPAttributeSetBase|属性集基类，继承此类创建自己的[属性集](#fpabilitysystem-attributeset)。为了配合`FPAbilityManagerComponent`使用，玩家添加给`APlayerState`，AI添加给`Pawn`|
 
@@ -773,8 +779,8 @@ virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 |CommonAbilityModel|`TSoftObjectPtr<UDataTable>`|通用[能力模型](#fpabilitysystem-abilitymodel)，管理所有Pawn都可以使用的能力|
 |AbilityMapTable|`TSoftObjectPtr<UFPAbilityMapTable>`|[能力映射表](#fpabilitysystem-maptable)，管理所有能力映射，插件已设置好，不建议修改|
 |CooldownGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|冷却GE类，所有能力都使用此GE，插件已设置好，不建议修改|
-|CostGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|消耗GE类，，所有能力都使用此GE，插件已设置好，不建议修改|
-|DamageGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|伤害GE类，，所有能力都使用此GE，插件已设置好，不建议修改|
+|CostGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|消耗GE类，所有能力都使用此GE，插件已设置好，不建议修改|
+|DamageGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|伤害GE类，所有能力都使用此GE，插件已设置好，不建议修改|
 |FullStateGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|状态一直全满GE类，控制台输入"FP_FullState (bool)"启动GE，根据自己的需求添加|
 
 ![FPAbilitySystemSettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilitySystemSettings.png)
@@ -811,11 +817,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Ability")
 	FFPAbilityInput ConfirmCancelInput;
 
-	// 主动技能，FFPAbilityInput不为空时绑定输入，<能力标签，能力输入>
+	// 主动能力，FFPAbilityInput不为空时绑定输入，<能力标签，能力输入>
 	UPROPERTY(EditDefaultsOnly, meta = (Categories = "FPAbility.Ability.Active"), Category = "Ability")
 	TMap<FGameplayTag, FFPAbilityInput> ActiveAbilities;
 
-	// 被动技能
+	// 被动能力
 	UPROPERTY(EditDefaultsOnly, meta = (Categories = "FPAbility.Ability.Passive"), Category = "Ability")
 	TArray<FGameplayTag> PassiveAbilities;
 };
@@ -916,7 +922,7 @@ void RemoveAllAbilityInput();
 // 绑定能力输入，按键被使用时会自动解绑之前的能力，本地调用
 void BindAbilityInput(const FGameplayTag& InAbilityTag, const FFPAbilityInput& InAbilityInput);
 
-// 解除此按键绑定的技能，本地调用
+// 解除此按键绑定的能力，本地调用
 void RemoveAbilityInput(const FFPAbilityInput& InAbilityInput);
 ```
 
@@ -951,7 +957,7 @@ public:
 
 	// 冷却
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FFPAbilityCooldown Cooldown;
+	FFPAbilityCooldownData Cooldown;
 
 	// 消耗
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -959,7 +965,7 @@ public:
 
 	// 伤害
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
-	FFPAbilityDamage Damage;
+	FFPAbilityDamageData Damage;
 
 	// 图标
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
@@ -1045,9 +1051,9 @@ public:
 3、在**能力模型**添加能力冷却和消耗，可以根据自己的[属性集](#fpabilitysystem-attributeset)添加消耗的属性
 
 ```c++
-// 能力冷却
+// 能力冷却数据
 USTRUCT(BlueprintType)
-struct FFPAbilityCooldown
+struct FFPAbilityCooldownData
 {
 	GENERATED_BODY()
 
@@ -1072,9 +1078,9 @@ TMap<FGameplayAttribute, FScalableFloat> Costs;
 添加`伤害反馈`标签后会播放受击动画、声音等，绑定委托实现`UFPAbilityManagerComponent::ReceiveDamageHitReactDelegate`<br>
 **伤害给与目标的效果**：如着火、眩晕等
 ```c++
-// 能力伤害
+// 能力伤害数据
 USTRUCT(BlueprintType)
-struct FFPAbilityDamage
+struct FFPAbilityDamageData
 {
 	GENERATED_BODY()
 
@@ -1091,6 +1097,12 @@ public:
 	// 伤害给与目标的效果
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
 	TArray<TSubclassOf<UGameplayEffect>> GiveEffects;
+
+	// 是否有效
+	FORCEINLINE bool IsValid() const
+	{
+		return Value > 0;
+	}
 };
 
 // UFPAbilityBase的函数↓↓↓
@@ -1212,9 +1224,10 @@ public:
 };
 ```
 
+<a name="fpabilitysystem-usageguide"></a>
 * **使用指南**
 
-1、给`APlayerState`(玩家)或`APawn`(AI)添加`UFPAttributeSet`和`UFPAbilitySystemComponent`，并继承`IAbilitySystemInterface`接口，重写接口的函数`GetAbilitySystemComponent`
+1、给`APlayerState`(玩家)和`APawn`(AI)添加`UFPAttributeSet`和`UFPAbilitySystemComponent`，并继承`IAbilitySystemInterface`接口，重写接口的函数`GetAbilitySystemComponent`
 
 ```c++
 AMyPlayerState::AMyPlayerState()
@@ -1225,8 +1238,29 @@ AMyPlayerState::AMyPlayerState()
 	// AbilitySystemComponent的ReplicationMode默认为Mixed，AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 }
 
-void AMyPlayerState::GetAbilitySystemComponent() const
+UAbilitySystemComponent* AMyPlayerState::GetAbilitySystemComponent() const
 {
+	return AbilitySystemComponent;
+}
+
+UAbilitySystemComponent* AMyPawn::GetAbilitySystemComponent() const
+{
+	// 判断这个Pawn是否被玩家控制器控制
+	if (Controller && Controller->IsPlayerController())
+	{
+		// 在玩家控制AI角色时，可以临时切换成返回AI的ACS
+		bool bControlAIPawn = false;// 待赋值
+		if (!bControlAIPawn)
+		{
+			// 返回PS的ASC
+			if (AFPPlayerStateBase* LocalPlayerState = GetPlayerState<AFPPlayerStateBase>())
+			{
+				return LocalPlayerState->GetAbilitySystemComponent();
+			}
+		}
+	}
+
+	// 这里返回AI角色的ASC
 	return AbilitySystemComponent;
 }
 ```
@@ -1292,7 +1326,7 @@ static void RemoveAllAbilityInput(AActor* InAvatarActor);
 UFUNCTION(BlueprintCallable, Category = "FPAbility")
 static void BindAbilityInput(AActor* InAvatarActor, UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag, const FFPAbilityInput& InAbilityInput);
 
-// 解除此按键绑定的技能，本地调用
+// 解除此按键绑定的能力，本地调用
 // @param InAvatarActor 目标AvatarActor
 // @param InAbilityInputs 能力输入
 UFUNCTION(BlueprintCallable, Category = "FPAbility")
@@ -1399,21 +1433,251 @@ $MitigatedDamage = UnmitigatedDamage\times \dfrac{100}{100 + Armor}\times (1 -Re
 <a name="fpabilitysystem-fpabilitycombo"></a>
 ### FPAbilityCombo
 
-能力组合
+能力组合，将动画组合成连击动作。此模块参考[Combo Graph](https://www.unrealengine.com/marketplace/product/combo-graph)(插件已购买)，
+复刻后移除了**工具栏的模式切换**、**节点自动排列**、**非GAS的逻辑**(现在插件仅对GAS有效)、**旧粒子系统**(仅留下Niagara)；<br>
+**不同部分**：必须基于骨架设置动画组合，输入基于[FPInput](#fpcommon-fpinput)用游戏标签设置输入，将序列节点和蒙太奇节点组合成一个动画节点(可以通过枚举切换)，节点Slate参考了动画蓝图。
 
 * **此模块的主要类**
 
 |类名|描述|
 |:-:|:-:|
-|FPAbilityTask_StartAbilityCombo|启动能力组合任务|
+|FPAbilityTask_RunAbilityCombo|运行能力组合任务|
+|FPAbilityTask_PlayMontage|播放蒙太奇任务|
+|FPAbilityTask_NetworkSyncPoint|网络同步点任务：为客户端和服务器提供通用同步点的任务|
+|FPAbilityComboTasksComponent|能力组合任务组件，用于发送网络复制的游戏事件(按键输入后切换动画节点)|
+|FPAbilityComboCollisionComponent|能力组合碰撞组件：为拥有运动轨迹的网格提供基本的碰撞检测机制|
+|FPAbilityComboAnimNotifyState|能力组合动画通知状态：在组合动画开始或结束时发送事件|
+|FPAbilityCollisionAnimNotifyState|能力碰撞动画通知状态|
+|FPAbilityGameplayCueNotify_HitImpact|能力游戏提示通知_命中打击，用于生成打击目标的粒子和声音|
 |FPAbilityCombo|能力组合，将动画组合成连击动作|
 |FPAbilityComboNodeBase|能力组合节点基类|
 |FPAbilityComboNodeTrans|能力组合节点转换，处理节点转换|
-|FPAbilityComboNodeConduit|能力组合节点导管，建立分支|
-|FPAbilityComboNodeAnimBase|能力组合动画节点基类|
+|FPAbilityComboNodeConduit|能力组合导管节点，建立分支|
 |FPAbilityComboNodeEntry|能力组合开始节点|
 |FPAbilityComboNodeAnim|能力组合动画节点，用来添加动画序列或动画蒙太奇，网络环境仅支持动画蒙太奇|
-|FPAbilityComboNodeAnimBlueprint|能力组合动画蓝图节点|
+
+* **使用指南**
+
+1、**FPAbilityCombo**项目设置
+
+|属性|数据类型|描述|
+|:-:|:-:|:-:|
+|DynamicMontageSlotName|`FName`|动画序列创建动态蒙太奇的插槽名称|
+|NotifyStates|`TMap<TSoftClassPtr<UAnimNotifyState>, FFPAbilityComboNotifyStateAutoSetup>`|自动设置动画通知状态，给所有播放的动画添加动画通知状态|
+|CostGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|消耗GE类，所有动画都使用此GE，插件已设置好，不建议修改|
+|DamageGameplayEffectClass|`TSoftClassPtr<UGameplayEffect>`|伤害GE类，所有动画都使用此GE，插件已设置好，不建议修改|
+|bSequencesNetworkedWarning|`bool`|网络环境中，使用动画序列发送消息警告(网络环境仅支持动画蒙太奇)|
+
+![FPAbilityComboSettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityComboSettings.png)
+
+2、在UGameplayAbility中调用RunAbilityCombo运行能力组合。也可以直接使用[FPAbilitySystem](#fpabilitysystem-fpabilitysystem)的`FPAbilityComboBase`来运行能力组合
+
+```c++
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFPAbilityComboTaskDelegate, FGameplayTag, EventTag, FGameplayEventData, EventData);
+
+// 开始能力组合时调用的委托
+UPROPERTY(BlueprintAssignable)
+FFPAbilityComboTaskDelegate OnComboStart;
+
+// 结束能力组合时调用的委托
+UPROPERTY(BlueprintAssignable)
+FFPAbilityComboTaskDelegate OnComboEnd;
+
+//  接收能力组合节点事件时调用的委托
+UPROPERTY(BlueprintAssignable)
+FFPAbilityComboTaskDelegate EventReceived;
+
+// 创建并运行能力组合，从GA中启动能力组合的资产
+// @param InOwningAbility 拥有的能力
+// @param InAbilityCombo 要运行的能力组合资源
+// @param InInitialInputTag 初始输入标签，转换到导管节点后的第一个动画节点，存在导管节点时才会生效
+// @param bInBroadcastInternalEvents 是否使用EventReceived代理广播内部游戏事件(包括组合开始和结束事件)
+UFUNCTION(BlueprintCallable, Category = "FPAbility|Tasks", meta = (DisplayName = "RunAbilityCombo", AdvancedDisplay = "InInitialInputTag, bInBroadcastInternalEvents", HidePin = "InOwningAbility", DefaultToSelf = "InOwningAbility", BlueprintInternalUseOnly = "TRUE"))
+static UFPAbilityTask_RunAbilityCombo* CreateRunAbilityCombo(UGameplayAbility* InOwningAbility, UFPAbilityCombo* InAbilityCombo, UPARAM(meta = (Categories = "FPInput.Ability")) FGameplayTag InInitialInputTag, bool bInBroadcastInternalEvents = false);
+```
+
+![FPAbilityCombo_Run](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_Run.png)
+
+3、在内容浏览器中创建新的**能力组合**或**动画节点蓝图**
+
+![FPAbilityCombo_AssetType](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_AssetType.png)
+
+4、选择要组合动画的骨架创建**能力组合**，类似动画蓝图；选择父类**动画节点蓝图**创建**动画节点蓝图**(可选)
+
+![FPAbilityCombo_Filter](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_Filter.png)
+![FPAbilityCombo_Panel](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_Panel.png)
+![FPAbilityCombo_AnimNodeBlueprint](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_AnimNodeBlueprint.png)
+
+5、节点转换
+
+![FPAbilityCombo_NodeTrans](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_NodeTrans.png)
+
+```c++
+// 能力组合转换行为
+UENUM(BlueprintType)
+enum class EFPAbilityComboTransitionBehavior : uint8
+{
+	// 输入触发器后，立即触发组合转换
+	Immediately,
+
+	// 输入按键后，动画通知触发组合转换，如果已动画通知，则立即触发
+	OnAnimNotifyClass,
+
+	// 输入按键后，基于动画通知名称触发组合转换（骨架通知）
+	OnAnimNotifyName,
+
+	// 当组合通知状态结束时，触发组合转换
+	OnComboWindowEnd,
+};
+
+// 转到下一个节点的输入标签
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (Categories = "FPInput.Ability"), Category = "FPAbility|Transition")
+FGameplayTag TransitionInputTag;
+
+// 输入事件类型
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "TransitionInputTag.IsValid()", EditConditionHides), Category = "FPAbility|Transition")
+ETriggerEvent TriggerEvent = ETriggerEvent::Triggered;
+
+// 能力组合转换行为，转换到下一个节点
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "TransitionInputTag.IsValid()", EditConditionHides), Category = "FPAbility|Transition")
+EFPAbilityComboTransitionBehavior TransitionBehavior = EFPAbilityComboTransitionBehavior::OnComboWindowEnd;
+```
+
+6、动画节点，可以通过拖拽动画资产创建动画节点，也可以右键添加创建设置好的**动画节点蓝图**
+
+![FPAbilityCombo_AnimNode](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPAbilityCombo_AnimNode.png)
+
+```c++
+// 能力伤害数据
+USTRUCT(BlueprintType)
+struct FFPAbilityDamageData
+{
+	GENERATED_BODY()
+
+public:
+
+	// 伤害数值
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (ClampMin = 0))
+	float Value = 0.0f;
+
+	// 伤害类型标签
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, meta = (Categories = "FPAbility.Damage.Type"))
+	FGameplayTagContainer TypeTags;
+
+	// 伤害给与目标的效果
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite)
+	TArray<TSubclassOf<UGameplayEffect>> GiveEffects;
+
+	// 是否有效
+	FORCEINLINE bool IsValid() const
+	{
+		return Value > 0;
+	}
+};
+
+// 游戏效果容器
+USTRUCT(BlueprintType)
+struct FFPAbilityGameplayEffectContainer
+{
+	GENERATED_BODY()
+
+public:
+
+	FFPAbilityGameplayEffectContainer() {};
+
+	// 目标类型
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GameplayEffectContainer")
+	TSubclassOf<UFPAbilityTargetType> TargetType;
+
+	// 应用于目标的GE列表
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GameplayEffectContainer")
+	TArray<TSubclassOf<UGameplayEffect>> TargetGameplayEffectClasses;
+
+	// 是否使用设置调用者数量
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GameplayEffectContainer")
+	bool bUseSetByCallerMagnitude = false;
+
+	// 设置调用者数据标签
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bUseSetByCallerMagnitude", EditConditionHides), Category = "GameplayEffectContainer")
+	FGameplayTag SetByCallerDataTag;
+
+	// 设置调用者数量
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (EditCondition = "bUseSetByCallerMagnitude", EditConditionHides), Category = "GameplayEffectContainer")
+	float SetByCallerMagnitude = 1.0f;
+};
+
+// GC容器
+USTRUCT(BlueprintType)
+struct FFPAbilityGameplayCueContainer
+{
+	GENERATED_BODY()
+
+public:
+
+	// GC列表容器
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "GameplayCueContainer")
+	TArray<FFPAbilityGameplayCueContainerDefinition> Definitions;
+
+	// 获取GT对应的GC列表和原对象
+	void GetAggregatedDefinitionsAndObjects(TMap<FGameplayTag, FFPAbilityGameplayCueContainerDefinition>& OutDefinitions, TArray<TWeakObjectPtr<UObject>>& OutSourceObjects);
+
+	// 获取GT对应的GC列表和原对象的路径
+	void GetAggregatedDefinitionsAndPaths(TMap<FGameplayTag, FFPAbilityGameplayCueContainerDefinition>& OutDefinitions, TArray<FSoftObjectPath>& OutSoftObjectPaths);
+};
+```
+```c++
+// 动画类型
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Anim")
+EFPAbilityComboAnimType AnimType = EFPAbilityComboAnimType::Montage;
+
+// 动画序列
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "AnimType == EFPAbilityComboAnimType::Sequence", EditConditionHides), Category = "FPAbility|Anim")
+TSoftObjectPtr<UAnimSequence> Sequence;
+
+// 蒙太奇
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "AnimType == EFPAbilityComboAnimType::Montage", EditConditionHides), Category = "FPAbility|Anim")
+TSoftObjectPtr<UAnimMontage> Montage;
+
+// 蒙太奇开始部分
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "AnimType == EFPAbilityComboAnimType::Montage", EditConditionHides), Category = "FPAbility|Anim")
+FName StartSection = NAME_None;
+
+// 动画蒙太奇播放率
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"), Category = "FPAbility|Anim")
+float MontagePlayRate = 1.0f;
+
+// 根运动平移的比例
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (ClampMin = "0.0"), Category = "FPAbility|Anim")
+float RootMotionScale = 1.0f;
+
+// 能力结束时停止动画
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Anim")
+bool bStopAnimationWhenAbilityEnds = true;
+
+// 通知状态覆盖，播放动画的之前给动画添加此通知状态和UFPAbilityComboProjectSettings::NotifyStates
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Notify")
+TMap<TSoftClassPtr<UAnimNotifyState>, FFPAbilityComboNotifyStateAutoSetup> NotifyStatesOverrides;
+
+// 能力消耗
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Abilities")
+TMap<FGameplayAttribute, FScalableFloat> AbilityCosts;
+
+// 能力伤害
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Abilities")
+FFPAbilityDamageData AbilityDamage;
+
+// GE容器映射
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Abilities")
+TMap<FGameplayTag, FFPAbilityGameplayEffectContainer> EffectsContainerMap;
+
+// GC容器映射
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Abilities")
+TMap<FGameplayTag, FFPAbilityGameplayCueContainer> CuesContainerMap;
+
+// 事件标签容器，当有这些标签时触发事件
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FPAbility|Abilities")
+FGameplayTagContainer EventTags;
+```
 
 <a name="fpabilitysystem-fpabilitycomboeditor"></a>
 ### FPAbilityComboEditor
@@ -1433,18 +1697,25 @@ $MitigatedDamage = UnmitigatedDamage\times \dfrac{100}{100 + Armor}\times (1 -Re
 |FPAbilityComboPersonaBlueprintEditor|能力组合角色蓝图编辑器：可重复使用的角色功能，适用骨骼相关资产的资产编辑器|
 |FPAbilityComboAnimAssetBrowser|能力组合动画资产浏览器|
 |FPAbilityComboEditorToolbar|能力组合编辑器工具栏|
-|FPAbilityComboEdGraph|能力组合编辑器图形|
-|FPAbilityComboSchema|能力组合编辑器图形架构：定义和管理能力组合图形节点|
+|FPAbilityComboEdGraph|能力组合编辑器图表|
+|FPAbilityComboSchema能力组合编辑器图表架构：定义和管理能力组合图表节点|
 |FPAbilityComboApplicationMode|能力组合应用程序模式，创建此模式的选项卡|
 |FPAbilityComboAnimAssetTabFactory|能力组合动画资产选项卡工厂|
-|FPAbilityComboGraphViewportTabFactory|能力组合图形视口选项卡工厂|
+|FPAbilityComboGraphViewportTabFactory|能力组合图表视口选项卡工厂|
 |FPAbilityComboPropertyDetailsTabFactory|能力组合属性细节选项卡工厂|
 |FPAbilityComboDebugger|能力组合调试器，编辑器播放时，可以在能力组合编辑器选择调试的对象进行调试|
+|FPAbilityComboConnectionDrawingPolicy|能力组合连接绘制策略|
+|FPAbilityComboDragDropAction|能力组合拖放操作|
 |FPAbilityComboEdNodeBase|能力组合编辑器节点基类|
 |FPAbilityComboEdNodeEntry|能力组合编辑器开始节点|
-|FPAbilityComboEdNodeConduit|能力组合编辑器节点导管，建立分支|
+|FPAbilityComboEdNodeConduit|能力组合编辑器导管节点，建立分支|
 |FPAbilityComboEdNodeTrans|能力组合编辑器节点转换|
 |FPAbilityComboEdNodeAnim|能力组合编辑器动画节点|
+|SFPAbilityComboNodeEntry|能力组合开始节点Slate|
+|SFPAbilityComboNodeConduit|能力组合导管节点Slate，建立分支|
+|SFPAbilityComboOutputPin|能力组合输出引脚Slate|
+|SFPAbilityComboNodeTrans|能力组合节点转换Slate|
+|SFPAbilityComboNodeAnim|能力组合动画节点Slate|
 
 <a name="fpfeatures"></a>
 ## FPFeatures
