@@ -28,6 +28,7 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 
 - System：此类插件为独立系统，可根据游戏类型选择使用
 	- [FPMovementSystem](#fpmovementsystem)：角色基础运动系统
+	- [FPCameraSystem](#fpcamerasystem)：摄像机系统
 	- [FPOnlineSystem](#fponlinesystem)：管理服务器和会话，处理服务器玩家存档并生成玩家
 	- [FPAbilitySystem](#fpabilitysystem)
 		- [FPAbilitySystem](#fpabilitysystem-fpabilitysystem)：能力属性管理框架
@@ -427,6 +428,11 @@ void AMyPlayerController::OnPossessedPawn(APawn* NewPawn)
 	}
 }
 ```
+
+<a name="fpcamerasystem"></a>
+## FPCameraSystem
+
+摄像机系统
 
 <a name="fponlinesystem"></a>
 ## FPOnlineSystem
