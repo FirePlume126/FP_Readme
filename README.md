@@ -33,17 +33,16 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 		- [FPAbilitySystem](#fpabilitysystem-fpabilitysystem)：能力属性管理框架
 		- [FPAbilityCombo](#fpabilitysystem-fpabilitycombo)：能力组合(技能连招系统)
 		- [FPAbilityComboEditor](#fpabilitysystem-fpabilitycomboeditor)：能力组合编辑器
-
-* Utility：此类插件是存放工具的插件
-	- [FPUtility](#fputility)：工具函数库
-	- [FPEditorTools](#fpeditortools)：编辑器工具
-
-- Misc：此类插件包含简单游戏功能和用于存储资产
+	
+* Misc：此类插件包含简单游戏功能和用于存储资产
 	- [FPFeatures](#fpfeatures)：包含简单的游戏功能模块
 		- [FPInteraction](#fpfeatures-fpinteraction)：交互
 		- [FPInventory](#fpfeatures-fpinventory)：库存
 	- [FPAssets](#fpassets)：用于存储资产
 	
+- Utility：此类插件是存放工具的插件
+	- [FPEditorTools](#fpeditortools)：编辑器工具
+
 * [Non self-made assets](#non-self-made-assets)：非自制资产，除此之外的**美术**和所有**程序**均为自制
 
 ---
@@ -1902,16 +1901,6 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FFPAbilityComboHitRegisteredDelegate
 |SFPAbilityComboNodeTrans|能力组合节点转换Slate|
 |SFPAbilityComboNodeAnim|能力组合动画节点Slate|
 
-<a name="fputility"></a>
-## FPUtility
-
-* 工具函数库`UFPUtilityFunctionLibrary`由函数模板、工具函数和数学函数组成
-
-<a name="fpeditortools"></a>
-## FPEditorTools
-
-* 动画修改器
-
 <a name="fpfeatures"></a>
 ## FPFeatures
 
@@ -1999,6 +1988,13 @@ void LocalSortItems(UFPInventoryComponent* InTargetInventoryComp = nullptr);
 用于存储资产
 
 * 字体：[Source Han Sans](https://www.github.com/adobe-fonts/source-han-sans)
+
+<a name="fpeditortools"></a>
+## FPEditorTools
+
+编辑器工具
+
+* 动画修改器
 
 <a name="non-self-made-assets"></a>
 ## Non self-made assets
