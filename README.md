@@ -24,6 +24,7 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 	- [FPCommon](#fpcommon)：包含通用基础功能的插件
 		- [FPInput](#fpcommon-fpinput)：管理输入(仅用于C++)
 		- [FPUI](#fpcommon-fpui)：管理用户界面
+		- [FPCamera](#fpcommon-fpcamera)：摄像机管理框架
 		- [FPLoadingScreen](#fpcommon-fploadingscreen)：游戏启动或地图转换期间的加载界面
 
 - System：此类插件为独立系统，可根据游戏类型选择使用
@@ -193,6 +194,227 @@ static void RemoveAllWidget(const UObject* WorldContextObject);
 // 查找已添加到屏幕的控件
 UFUNCTION(BlueprintPure, BlueprintCosmetic, meta = (WorldContext = "WorldContextObject"), Category = "FPUI")
 static UCommonActivatableWidget* FindWidget(const UObject* WorldContextObject, UPARAM(meta = (Categories = "FPUI.Slot")) FGameplayTag InSlotTag);
+```
+
+<a name="fpcommon-fpcamera"></a>
+### FPCamera
+
+摄像机管理框架
+
+* **此模块的主要类**
+
+|类名|描述|
+|:-:|:-:|
+|FPPlayerCameraManager|玩家摄像机管理器，主要用来管理和切换**摄像机模式**，<br>会对使用过的**摄像机模式**进行缓存，提高频繁切换时的性能，<br>调试指令：`FP.Camera.Debug (bool)`|
+|FPCameraModeBase|在C++继承此类创建**摄像机模式**写摄像机运动逻辑(易扩展)|
+|FPCameraMode_ThirdPerson|[第三人称摄像机模式](#fpcommon-cameramode-tp)|
+|FPCameraMode_FirstPerson|[第一人称摄像机模式](#fpcommon-cameramode-fp)|
+
+现在只提供了两种摄像机模式，待扩展其它摄像机模式...
+
+* **摄像机模式**
+
+1、摄像机模式基类`FPCameraModeBase`，此基类不支持蓝图继承
+
+|属性|数据类型|描述|
+|:-:|:-:|:-:|
+|DefaultCameraSlotTag|FGameplayTag|默认摄像机插槽标签，只对有插槽的摄像机模式生效|
+|FieldOfView|float|水平视野|
+|ViewPitchMin|float|视野俯仰最小值|
+|ViewPitchMax|float|视野俯仰最大值|
+|BlendSettings|FFPCameraBlendSettings|切换此**摄像机模式**时，使用的混合设置|
+
+```c++
+// 默认摄像机插槽标签，只对有插槽的摄像机模式生效
+UPROPERTY(EditDefaultsOnly, meta = (EditCondition = "bUseCameraSlot", EditConditionHides, HideEditConditionToggle), Category = "FPCamera")
+FGameplayTag DefaultCameraSlotTag;
+
+// 水平视野
+UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "5.0", ClampMax = "170.0"), Category = "FPCamera")
+float FieldOfView = 90.0f;
+
+// 视野俯仰最小值
+UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "-89.9", ClampMax = "89.9"), Category = "FPCamera")
+float ViewPitchMin = -89.9f;
+
+// 视野俯仰最大值
+UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "-89.9", ClampMax = "89.9"), Category = "FPCamera")
+float ViewPitchMax = 89.9f;
+
+// 混合设置
+UPROPERTY(EditDefaultsOnly, Category = "FPCamera")
+FFPCameraBlendSettings BlendSettings;
+```
+
+```c++
+// 摄像机混合模式
+UENUM(BlueprintType)
+enum class FFPCameraBlendMode : uint8
+{
+	// 线性插值
+	Linear,
+
+	// 指数缓入
+	EaseIn,
+
+	// 指数缓出
+	EaseOut,
+
+	// 指数缓入缓出
+	EaseInOut,
+};
+
+// 摄像机混合设置
+USTRUCT(BlueprintType)
+struct FFPCameraBlendSettings
+{
+	GENERATED_BODY()
+
+public:
+
+	// 混合时间
+	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0"))
+	float BlendTime = 1.0f;
+
+	// 混合模式
+	UPROPERTY(EditDefaultsOnly, meta = (EditCondition = "BlendTime > 0", EditConditionHides))
+	FFPCameraBlendMode BlendMode = FFPCameraBlendMode::EaseOut;
+
+	// 混合指数，用于控制曲线形状的指数
+	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0", EditCondition = "BlendTime > 0 && BlendMode != FFPCameraBlendMode::Linear", EditConditionHides))
+	float BlendExponent = 4.0f;
+
+	// 混合曲线，优先使用曲线混合
+	UPROPERTY(EditDefaultsOnly, meta = (EditCondition = "BlendTime > 0", EditConditionHides))
+	TObjectPtr<UCurveFloat> BlendCurve = nullptr;
+};
+```
+
+<a name="fpcommon-cameramode-tp"></a>
+2、第三人称摄像机模式：计算目标摄像机旋转->计算平滑支点位置->计算支点位置->计算目标摄像机位置->根据和墙体的距离校正偏移，类似弹簧臂
+
+|属性|数据类型|描述|
+|:-:|:-:|:-:|
+|CameraSlots|TMap<FGameplayTag, FFPCameraSlot_ThirdPerson>|摄像机插槽映射|
+|PivotSocketNames|TArray<FName>|摄像机支点插槽名称，会根据插槽的位置来计算一个平均位置|
+|TraceOriginSocketName|FName|检测原点插槽名称，类似弹簧臂|
+|TraceRadius|float|检测半径|
+|TraceChannel|TEnumAsByte<ETraceTypeQuery>|检测通道|
+|DebugSizeRatio|float|调试大小比例|
+
+```c++
+// 摄像机插槽映射
+UPROPERTY(EditDefaultsOnly, Category = "FPCamera")
+TMap<FGameplayTag, FFPCameraSlot_ThirdPerson> CameraSlots;
+
+// 摄像机支点插槽名称，会根据插槽的位置来计算一个平均位置
+UPROPERTY(EditDefaultsOnly, Category = "FPCamera")
+TArray<FName> PivotSocketNames;
+
+// 检测原点插槽名称，类似弹簧臂
+UPROPERTY(EditDefaultsOnly, Category = "FPCamera|Collision")
+FName TraceOriginSocketName;
+
+// 检测半径
+UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0"), Category = "FPCamera|Collision")
+float TraceRadius = 10.0f;
+
+// 检测通道
+UPROPERTY(EditDefaultsOnly, Category = "FPCamera|Collision")
+TEnumAsByte<ETraceTypeQuery> TraceChannel = ETraceTypeQuery::TraceTypeQuery1;
+
+// 调试大小比例
+UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0"), Category = "FPCamera|Debug")
+float DebugSizeRatio = 1.0f;
+```
+
+```c++
+//  第三人称摄像机插槽
+USTRUCT(BlueprintType)
+struct FFPCameraSlot_ThirdPerson
+{
+	GENERATED_BODY()
+
+public:
+
+	FFPCameraSlot_ThirdPerson();
+
+	// 旋转滞后速度
+	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0"))
+	float RotationLagSpeed = 20.0f;
+
+	// 支点滞后插值速度
+	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0"))
+	FVector PivotLagSpeed = FVector::ZeroVector;
+
+	// 支点相对偏移
+	UPROPERTY(EditDefaultsOnly)
+	FVector PivotOffset = FVector::ZeroVector;
+
+	// 摄像机相对偏移
+	UPROPERTY(EditDefaultsOnly)
+	FVector CameraOffset = FVector::ZeroVector;
+
+	// 混合设置
+	UPROPERTY(EditDefaultsOnly, Category = "FPCamera")
+	FFPCameraBlendSettings BlendSettings;
+};
+```
+
+<a name="fpcommon-cameramode-fp"></a>
+3、第一人称摄像机模式
+
+|属性|数据类型|描述|
+|:-:|:-:|:-:|
+|CameraSocketName|FName|摄像机插槽名称，摄像机会附加在此摄像机上|
+|RotationLagSpeed|float|旋转滞后速度|
+
+```c++
+// 摄像机插槽名称，摄像机会附加在此摄像机上
+UPROPERTY(EditDefaultsOnly, Category = "FPCamera")
+FName CameraSocketName;
+
+// 旋转滞后速度
+UPROPERTY(EditDefaultsOnly, meta = (ClampMin = "0"), Category = "FPCamera")
+float RotationLagSpeed = 20.0f;
+```
+
+* **使用指南**
+
+1、把`FPPlayerCameraManager`添加给`APlayerController::PlayerCameraManagerClass`
+
+2、继承**摄像机模式**创建蓝图填写数据，也可以重写函数写逻辑
+
+3、在项目设置中添加**摄像机模式**类，通过`FGameplayTag`管理**摄像机模式**
+
+```c++
+// 摄像机模式类
+UPROPERTY(config, EditAnywhere, meta = (Categories = "FPCamera"), Category = "Config")
+TMap<FGameplayTag, TSubclassOf<UFPCameraModeBase>> CameraModeClasss;
+
+// 默认摄像机模式标签
+UPROPERTY(config, EditAnywhere, meta = (Categories = "FPCamera"), Category = "Config")
+FGameplayTag DefaultCameraModeTag;
+```
+
+4、通过函数库`UFPCameraFunctionLibrary`的函数更换摄像机模式或摄像机插槽
+
+```c++
+// 设置当前摄像机模式
+static void SetCurrentCameraMode(APlayerController* InPlayerController, const FGameplayTag& InModeTag, const FGameplayTag& InSlotTag = FGameplayTag::EmptyTag, AActor* NewTargetActor = nullptr);
+
+// 设置当前摄像机模式
+// @param InPlayerController 对此玩家控制器的摄像机进行设置
+// @param InModeTag 摄像机模式标签，用来切换摄像机模式；此标签为空时，不切换摄像机模式，可直接设置当前摄像机模式的InSlotTag和NewTargetActor
+// @param InSlotTag 摄像机插槽标签，用来切换摄像机模式的插槽；只对有插槽的摄像机模式生效；此标签为空时，切换默认摄像机插槽
+// @param NewTargetActor 摄像机相对此Actor移动；输入nullptr时，使用InPlayerController控制的Pawn
+UFUNCTION(BlueprintCallable, DisplayName = "SetCurrentCameraMode", Category = "FPCamera")
+static void K2_SetCurrentCameraMode(APlayerController* InPlayerController, UPARAM(meta = (Categories = "FPCamera")) FGameplayTag InModeTag, FGameplayTag InSlotTag, AActor* NewTargetActor = nullptr);
+
+// 重置摄像机模式，移除所有缓存的摄像机模式，并使用默认摄像机模式
+// @param InPlayerController 对此玩家控制器的摄像机进行设置
+UFUNCTION(BlueprintCallable, Category = "FPCamera")
+static void ResetCameraMode(APlayerController* InPlayerController);
 ```
 
 <a name="fpcommon-fploadingscreen"></a>
