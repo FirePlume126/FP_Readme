@@ -27,7 +27,6 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 		- [FPLoadingScreen](#fpcommon-fploadingscreen)：游戏启动或地图转换期间的加载界面
 
 - System：此类插件为独立系统，可根据游戏类型选择使用
-	- [FPMovementSystem](#fpmovementsystem)：角色基础运动系统
 	- [FPOnlineSystem](#fponlinesystem)：管理服务器和会话，处理服务器玩家存档并生成玩家
 	- [FPAbilitySystem](#fpabilitysystem)
 		- [FPAbilitySystem](#fpabilitysystem-fpabilitysystem)：能力属性管理框架
@@ -142,7 +141,7 @@ static TArray<FName> GetMappingNamesForKey(const FKey& InKey);
 
 |类名|描述|
 |:-:|:-:|
-|FPUIHUD|管理控件，把`W_UILayoutManager`添加到视口，用来添加移除控件|
+|FPUIManagerSubsystem|UI管理子系统，管理控件，把`W_UILayoutManager`添加到视口，用来添加移除控件|
 |FPUILayoutManager|UI布局管理：用来管理UCommonActivatableWidgetContainerBase堆栈控件|
 |W_UILayoutManager|继承`FPUILayoutManager`的控件，添加了四个堆栈控件|
 |FPUIUserWidget|继承于`UCommonActivatableWidget`，聚焦`FPUIUserWidget`控件时，会设置输入模式和显示鼠标光标，默认游戏输入模式且不显示鼠标。可以通过`InputMode`设置控件的输入模式 ![FPUI_InputMode](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPUI_InputMode.png)|
@@ -169,9 +168,7 @@ static TArray<FName> GetMappingNamesForKey(const FKey& InKey);
 
 ![FPUISettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPUISettings.png)
 
-4、继承`FPUIHUD`创建自己的HUD，并添加给`AGameModeBase::HUDClass`
-
-5、添加移除控件
+4、添加移除控件
 ![FPUI_Widget](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPUI_Widget.png)
 
 ```c++
@@ -220,213 +217,6 @@ static UCommonActivatableWidget* FindWidget(const UObject* WorldContextObject, U
 
 6、设置渐变控件：开启`bShowGradientWidget`启动渐变控件，渐变控件会在加载结束后启动，先让屏幕变黑，然后缓慢让屏幕变量。`BlackScreenTime`为黑屏时间，`GradientTime`为渐变时间。
 ![FPLoadingScreen_Gradient](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPLoadingScreen_Gradient.png)
-
-<a name="fpmovementsystem"></a>
-## FPMovementSystem
-
-角色基础运动系统，此插件参考[Advanced Locomotion System V4](https://www.fab.com/listings/ef9651a4-fb55-4866-a2d9-1b38b028f9c7)做的C++插件，支持网络同步。
-我对这个插件并不满意，本意想做一个支持所有骨架的运动系统。我尝试把**状态机**写在**动画蓝图模板**中，然后通过**动画层接口**调用**动画层**，但**动画蓝图模板**不支持**混合配置**。
-目前插件只支持我自己的骨架，如果需要更换骨架，更换“Content\SkeletalMesh”文件夹中资产(骨架、重定向动画)。最后修改ABP_Character的骨架和动画。
-
-* **此模块的主要类**
-
-|类名|描述|
-|:-:|:-:|
-|FPMovementComponent|运动系统组件，仅支持添加给`ACharacter`，会对`ACharacter`做默认设置，包括添加`ABP_Character`，计算运动数据并进行网络同步|
-|FPMovementAnimInstance|运动系统动画实例，计算控制状态机的数据|
-|ABP_Character|继承`UFPMovementAnimInstance`的动画蓝图，处理状态机|
-|FPMovementPlayerCameraManager|玩家摄像机管理器，通过动画曲线设置摄像机位置旋转|
-|FPMovementAnimInstance_Camera|摄像机动画实例，通过`UFPMovementComponent`获取玩家状态|
-|ABP_Camera|继承`FPMovementAnimInstance_Camera`的动画蓝图，通过玩家状态设置动画曲线|
-
-* **调试指令**
-
-|指令|描述|
-|:-:|:-:|
-|FP.Movement.Debug.Camera (bool)|调试玩家摄像机|
-|FP.Movement.Debug.ShowDebugShapes (bool)|调试视角方向、速度方向、按键方向、角色朝向|
-|FP.Movement.Debug.CharacterStates (bool)|调试角色状态|
-|FP.Movement.Debug.AnimCurves (bool)|调试动画曲线|
-|FP.Movement.Debug.Mantle (bool)|调试玩家攀爬|
-|FP.Movement.Debug.FootIK (bool)|调试脚部IK|
-|FP.Movement.Debug.LandPrediction (bool)|调试坠落地面预测|
-
-* **使用指南**
-
-1、给`ACharacter`添加`FPMovementComponent`组件。
-
-2、对`ACharacter`的以下同名函数进行重载，并调用`FPMovementComponent`的这几个函数。
-```c++
-// 组件初始化前调用，在ACharacter::PreInitializeComponents()中调用此函数初始化
-void PreInitializeComponents();
-
-// 移动模式变化时，设置移动状态
-void OnMovementModeChanged(EMovementMode NewPrevMovementMode, uint8 InPreviousCustomMode = 0);
-
-// 开始蹲伏，设置站立蹲伏姿势
-void OnStartCrouch(float InHalfHeightAdjust, float InScaledHalfHeightAdjust);
-
-// 开始蹲伏，设置站立蹲伏姿势
-void OnEndCrouch(float InHalfHeightAdjust, float InScaledHalfHeightAdjust);
-
-// 着路时
-void Landed(const FHitResult& InHit);
-
-// 跳跃时	
-void OnJumped();
-```
-
-3、调用`FPMovementComponent`的输入事件。
-```c++
-// 移动
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Move(const FInputActionValue& InValue);
-
-// 查看
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Look(const FInputActionValue& InValue);
-
-// 行走
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Walk();
-
-// 蹲伏
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Crouching();
-
-// 可以跳
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-bool CanJump() const;
-
-// 跳，当bIsMantleCheck=true时可以检测攀爬
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Jump();
-
-// 停止跳，建议直接使用ACharacter::StopJumping
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void StopJump();
-
-// 可以冲刺
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-bool CanSprint() const;
-
-// 冲刺
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Sprint();
-
-// 停止冲刺
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void StopSprint();
-
-// 瞄准
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Aim();
-
-// 停止瞄准
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void StopAim();
-
-// 翻滚
-UFUNCTION(BlueprintCallable, Category = "FPMovement|InputEvent")
-void Roll();
-```
-
-4、调用`FPMovementComponent`的设置事件，为了方便在.ini保存本地设置，我将一些枚举参数改成了int32，可以直接调用去掉Event_的函数，输入枚举参数。
-```c++
-// 设置鼠标灵敏度
-// @param InTurnSensitivity 转弯灵敏度
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetTurnSensitivity(float InTurnSensitivity);
-
-// 设置左肩摄像机
-// @param bInRightShoulder 为true时摄像机在左肩；为false时在右肩
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetRightShoulderCamera(bool bInRightShoulder);
-
-// 设置第一人称视角
-// @param bInFirstPerson 为true时切换第一人称视角；为false时切换第三人称视角
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetFirstPersonCamera(bool bInFirstPerson);
-
-// 通过整数设置旋转模式
-// @param InRotationModeInt 0、查看方向，1、速度方向
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetRotationModeFromInt(int32 InRotationModeInt);
-
-// 设置移动模型
-// @param InModelNum 0、正常，1、敏捷，2、迟缓
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetMovementModel(int32 InModelNum);
-
-// 设置重叠状态
-// @param InOverlayState 重叠状态
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetOverlayState(EFPMovementOverlayState InOverlayState);
-
-// 设置布娃娃状态
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetRagdollState(bool bInRagdoll);
-
-// 设置速度比例
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetSpeedRatio(float InRatio);
-
-// 设置缩放比例
-// @param InScaleTime 执行缩放的时间
-// @param InRatioX X轴的缩放比例
-// @param InRatioY Y轴的缩放比例，等于0时Y=X
-// @param InRatioZ Z轴的缩放比例，等于0时Z=X
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetScaleRatio(float InScaleTime, float InRatioX, float InRatioY = 0.0f, float InRatioZ = 0.0f);
-
-// 设置跳高比例
-UFUNCTION(BlueprintCallable, Category = "FPMovement|Event")
-void Event_SetJumpHeightRatio(float InRatio);
-```
-
-5、设置摄像机管理器，在`APlayerController`中添加`AFPMovementPlayerCameraManager`
-```c++
-// .h
-
-virtual void OnPossess(APawn* NewPawn) override;
-
-virtual void OnRep_Pawn() override;
-
-// 玩家控制的APawn时，会在服务器和客户端执行
-void OnPossessedPawn(APawn* NewPawn);
-
-// .cpp
-
-AMyPlayerController::AMyPlayerController
-{
-	PlayerCameraManagerClass = AFPMovementPlayerCameraManager::StaticClass();
-}
-
-void AMyPlayerController::OnPossess(APawn* NewPawn)
-{
-	Super::OnPossess(NewPawn);
-
-	if (!IsRunningDedicatedServer())
-	{
-		OnPossessedPawn(NewPawn);
-	}
-}
-
-void AMyPlayerController::OnRep_Pawn()
-{
-	Super::OnRep_Pawn();
-
-	OnPossessedPawn(GetPawn());
-}
-
-void AMyPlayerController::OnPossessedPawn(APawn* NewPawn)
-{
-	if (AFPMovementPlayerCameraManager* CameraManager = Cast<AFPMovementPlayerCameraManager>(PlayerCameraManager))
-	{
-		CameraManager->OnPossess(NewPawn);
-	}
-}
-```
 
 <a name="fponlinesystem"></a>
 ## FPOnlineSystem
@@ -507,16 +297,22 @@ bStartAfterCreate=False
 ```c++
 // .h
 
+// UI提示禁止玩家加入游戏，不重写此函数玩家会直接退出游戏，没有拉黑提示
+virtual void BanPlayerJoinGameForUI() override;
+
 // 加载玩家状态
 virtual void LoadPlayerState(USaveGame* NewSaveObject) override;
 
 // 保存玩家状态
 virtual void SavePlayerState(USaveGame* NewSaveObject) override;
 
-// UI提示禁止玩家加入游戏，不重写此函数玩家会直接退出游戏，没有拉黑提示
-virtual void BanPlayerJoinGameForUI() override;
-
 // .cpp
+
+void AMyPlayerState::BanPlayerJoinGameForUI()
+{
+	// 在UMG中提示玩家被拉黑，延迟几秒后调用UFPOnlineFunctionLibrary::OpenMainMenu退出游戏
+	UFPUIFunctionLibrary::AddWidget(this, FPGameplayTags::UITag_ServerBanPlayer);
+}
 
 void AMyPlayerState::LoadPlayerState(USaveGame* NewSaveObject)
 {
@@ -536,12 +332,6 @@ void AMyPlayerState::SavePlayerState(USaveGame* NewSaveObject)
 	{
 		SavePlayerData->CharacterTransform = CharacterTransform;
 	}	
-}
-
-void AMyPlayerState::BanPlayerJoinGameForUI()
-{
-	// 在UMG中提示玩家被拉黑，延迟几秒后调用UFPOnlineFunctionLibrary::OpenMainMenu退出游戏
-	UFPUIFunctionLibrary::AddWidget(this, FPGameplayTags::UITag_ServerBanPlayer);
 }
 ```
 
@@ -726,13 +516,13 @@ void AMyPlayerState::BeginPlay()
 7、调用`AFPOnlinePlayerState`的函数添加聊天消息功能
 
 ```c++
-// 发送聊天信息，本地调用
-UFUNCTION(BlueprintCallable)
-void SendChatMessage(const FFPOnlineMessageData& InMessageData);
-
 // 接收聊天消息，重写后把消息添加到UI
 UFUNCTION()
 virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
+
+// 发送聊天信息，本地调用
+UFUNCTION(BlueprintCallable)
+void SendChatMessage(const FFPOnlineMessageData& InMessageData);
 ```
 
 <a name="fpabilitysystem"></a>
