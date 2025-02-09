@@ -215,7 +215,7 @@ static UCommonActivatableWidget* FindWidget(const UObject* WorldContextObject, U
 5、设置提示控件：开启`bShowTipWidget`启动提示控件，提示控件主要是由`SBorder`和`STextBlock`组成。
 ![FPLoadingScreen_Tip](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPLoadingScreen_Tip.png)
 
-6、设置渐变控件：开启`bShowGradientWidget`启动渐变控件，渐变控件会在加载结束后启动，先让屏幕变黑，然后缓慢让屏幕变量。`BlackScreenTime`为黑屏时间，`GradientTime`为渐变时间。
+6、设置渐变控件：开启`bShowGradientWidget`启动渐变控件，渐变控件会在加载结束后启动，先让屏幕变黑，然后缓慢让屏幕变亮。`bAutoExecuteGradient`为自动执行渐变，为true时会自动渐变并销毁控件，为false时需要调用`UFPLoadingScreenFunctionLibrary::ExecuteLoadingScreenGradient()`才会执行渐变并销毁控件；`BlackScreenTime`为黑屏时间，`GradientTime`为渐变时间。
 ![FPLoadingScreen_Gradient](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPLoadingScreen_Gradient.png)
 
 <a name="fponlinesystem"></a>
@@ -306,6 +306,9 @@ virtual void LoadPlayerState(USaveGame* NewSaveObject) override;
 // 保存玩家状态
 virtual void SavePlayerState(USaveGame* NewSaveObject) override;
 
+// 加入游戏更换Pawn完成，重写此函数可以让屏幕亮起来的逻辑(仅在本地客户端执行)
+virtual void JoinGameChangePawnCompleted() override;
+
 // .cpp
 
 void AMyPlayerState::BanPlayerJoinGameForUI()
@@ -332,6 +335,12 @@ void AMyPlayerState::SavePlayerState(USaveGame* NewSaveObject)
 	{
 		SavePlayerData->CharacterTransform = CharacterTransform;
 	}	
+}
+
+void AMyPlayerState::JoinGameChangePawnCompleted()
+{
+	// 这里使用了FPLoadingScreen模块
+	UFPLoadingScreenFunctionLibrary::ExecuteLoadingScreenGradient();
 }
 ```
 
@@ -516,8 +525,7 @@ void AMyPlayerState::BeginPlay()
 7、调用`AFPOnlinePlayerState`的函数添加聊天消息功能
 
 ```c++
-// 接收聊天消息，重写后把消息添加到UI
-UFUNCTION()
+// 接收聊天消息，重写后把消息添加到UI(仅在本地客户端执行)
 virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
 
 // 发送聊天信息，本地调用
