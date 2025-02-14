@@ -230,7 +230,8 @@ static UCommonActivatableWidget* FindWidget(const UObject* WorldContextObject, U
 |FPOnlineManagerSubsystem|联机管理子系统：专用服务器创建会话和地图，客户端读取玩家ID和名称|
 |FPOnlineServerSubsystem|服务器子系统：管理服务器数据，读取服务器玩家存档|
 |FPOnlineSessionsSubsystem|会话子系统：管理会话|
-|FPOnlinePlayerState|玩家状态：处理服务器玩家存档并生成玩家|
+|FPOnlinePlayerComponent|联机玩家组件：处理服务器玩家存档并生成玩家，仅支持添加给`APlayerController`|
+|FPOnlinePlayerInterface|联机玩家接口，仅支持添加给`APlayerController`，重写接口函数`GetOnlinePlayerComponent()`来和系统内部进行交互|
 |FPOnlineDedicatedServerSettings|专用服务器设置，保存在ServerSettings.ini中|
 
 * **存档和配置文件的读取保存时机**
@@ -293,58 +294,58 @@ bStartAfterCreate=False
 
 ![FPOnlineSystemSettings](https://github.com/FirePlume126/FP_Readme/blob/main/Images/FPOnlineSystemSettings.png)
 
-2、继承`AFPOnlinePlayerState`创建自己的玩家状态重写以下函数，并添加给`AGameModeBase::PlayerStateClass`
+2、给需要联机的`APlayerController`添加`FPOnlinePlayerComponent`组件，并添加`FPOnlinePlayerInterface`接口，重写接口函数`GetOnlinePlayerComponent()`。
+可以根据需要绑定组件的委托或调用组件的函数
 ```c++
 // .h
 
-// UI提示禁止玩家加入游戏，不重写此函数玩家会直接退出游戏，没有拉黑提示
-virtual void BanPlayerJoinGameForUI() override;
-
-// 加载玩家状态
-virtual void LoadPlayerState(USaveGame* NewSaveObject) override;
-
-// 保存玩家状态
-virtual void SavePlayerState(USaveGame* NewSaveObject) override;
-
-// 加入游戏更换Pawn完成，重写此函数可以让屏幕亮起来的逻辑(仅在本地客户端执行)
-virtual void JoinGameChangePawnCompleted() override;
-
-// .cpp
-
-void AMyPlayerState::BanPlayerJoinGameForUI()
+// 玩家数据操作
+UENUM(BlueprintType)
+enum class EFPOnlinePlayerDataOperation : uint8
 {
-	// 在UMG中提示玩家被拉黑，延迟几秒后调用UFPOnlineFunctionLibrary::OpenMainMenu退出游戏
-	UFPUIFunctionLibrary::AddWidget(this, FPGameplayTags::UITag_ServerBanPlayer);
-}
+	// 加载存档
+	Load,
 
-void AMyPlayerState::LoadPlayerState(USaveGame* NewSaveObject)
-{
-	//这只是一个案例，根据自己要保存的数据添加
-	if (UFPSavePlayerData* SavePlayerData = Cast<UFPSavePlayerData>(NewSaveObject))
-	{
-		CharacterTransform = SavePlayerData->CharacterTransform;
-	}	
-}
+	// 保存存档
+	Save,
+};
 
-void AMyPlayerState::SavePlayerState(USaveGame* NewSaveObject)
-{
-	Super::SavePlayerState(NewSaveObject);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FFPOnlinePlayerSimpleDelegate);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FFPOnlinePlayerDataOperationDelegate, USaveGame*, NewSaveObject, EFPOnlinePlayerDataOperation, Operation);
 
-	//这只是一个案例，根据自己要保存的数据添加
-	if (UFPSavePlayerData* SavePlayerData = Cast<UFPSavePlayerData>(NewSaveObject))
-	{
-		SavePlayerData->CharacterTransform = CharacterTransform;
-	}	
-}
+// 玩家数据操作委托，把NewSaveObject转换成UFPOnlineProjectSettings::SavePlayerInfoClass后加载、保存玩家存档
+UPROPERTY(BlueprintAssignable, BlueprintAuthorityOnly, Category = "FPOnline")
+FFPOnlinePlayerDataOperationDelegate OnPlayerDataOperationDelegate;
 
-void AMyPlayerState::JoinGameChangePawnCompleted()
-{
-	// 这里使用了FPLoadingScreen模块
-	UFPLoadingScreenFunctionLibrary::ExecuteLoadingScreenGradient();
-}
+// 禁止玩家加入游戏委托，不绑定此委托玩家会直接退出游戏，没有拉黑提示(仅在本地执行)
+UPROPERTY(BlueprintAssignable, Category = "FPOnline")
+FFPOnlinePlayerSimpleDelegate OnBanPlayerJoinGameDelegate;
+
+// 加入游戏更换Pawn完成委托，绑定此委托执行让屏幕亮起来的逻辑(仅在本地执行)
+UPROPERTY(BlueprintAssignable, Category = "FPOnline")
+FFPOnlinePlayerSimpleDelegate OnJoinGameChangePawnCompletedDelegate;
+
+// 检测世界分区流送，加载流送完成后生成角色
+UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "FPOnline")
+bool bCheckWorldPartitionStreaming = true;
+
+// 加入游戏要更换的APawn类，在委托OnPlayerDataOperationDelegate加载存档时，修改此变量可以生成玩家职业对应的Pawn
+UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "FPOnline")
+TSubclassOf<APawn> PlayerPawnClass;
+
+// 生成角色的变换，在委托OnPlayerDataOperationDelegate加载存档时，修改此变量可以在此位置生成Pawn
+UPROPERTY(BlueprintReadWrite, Category = "FPOnline")
+FTransform CharacterTransform;
+
+// 更换角色
+// @param NewPawnClass 不为空时修改PlayerPawnClass生成角色，否则直接使用PlayerPawnClass
+// @param bIsPlayerStart 为true时，在开始游戏处生成角色
+// @param InSpawnTransform bIsPlayerStart = false 时有效，InSpawnTransform位置不为零时，在此位置生成，否则直接使用CharacterTransform
+UFUNCTION(BlueprintCallable, Category = "FPOnline")
+void ChangeCharacter(TSubclassOf<APawn> NewPawnClass = nullptr, bool bIsPlayerStart = false, const FTransform& InSpawnTransform = FTransform());
 ```
 
-3、在`AGameModeBase`初始化服务器，在`APlayerController::OnUnPossess()`中调用`AFPOnlinePlayerState::WriteSavePlayerData()`。完成这些，存档功能就可以正常使用
+3、在`AGameModeBase`初始化服务器，在`APlayerController::OnUnPossess()`中调用`UFPOnlinePlayerComponent::WriteSavePlayerData()`。完成这些，存档功能就可以正常使用
 
 ```c++
 void AMyGameModeBase::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -365,12 +366,7 @@ void AMyGameModeBase::Logout(AController* Exiting)
 
 void AMyPlayerController::OnUnPossess()
 {
-	if (AMyPlayerState* OnlinePlayerState = GetPlayerState<AMyPlayerState>())
-	{
-		//这个函数中做了判断，只会在服务器执行
-		OnlinePlayerState->WriteSavePlayerData();
-	}
-
+	OnlinePlayerComp->WriteSavePlayerData();
 	Super::OnUnPossess();
 }
 
@@ -379,6 +375,12 @@ void AMyPlayerController::OnUnPossess()
 4、调用UFPOnlineFunctionLibrary的函数切换地图或调用子系统功能，这些函数可以根据情况使用
 
 ```c++
+// 获取联机玩家组件
+// @param InPlayerController 玩家控制器
+// @param bLookForComponent 可以通过FindComponentByClass()查找组件
+UFUNCTION(BlueprintPure, Category = "FPOnline")
+static UFPOnlinePlayerComponent* GetOnlinePlayerComponent(APlayerController* InPlayerController, bool bLookForComponent = true);
+
 //====================================切换地图====================================>>
 
 // 获取地图URL
@@ -508,7 +510,7 @@ FFPOnlineOnStartSessionComplete OnlineOnStartSessionComplete;
 FFPOnlineOnUpdateSessionComplete OnlineOnUpdateSessionComplete;
 ```
 
-6、没联机的时候(开始游戏界面)，玩家状态不建议继承`AFPOnlinePlayerState`，这时候如果要获取ID和名称，可以通过`FPOnlineManagerSubsystem`直接获取。也可以设置给玩家状态后，再通过玩家状态获取
+6、没联机的时候(开始游戏界面)，`APlayerController`不需要继承`FPOnlinePlayerInterface`和添加`FPOnlinePlayerComponent`，这时候如果要获取ID和名称，可以通过`FPOnlineManagerSubsystem`直接获取。也可以设置给玩家状态后，再通过玩家状态获取
 
 ```c++
 void AMyPlayerState::BeginPlay()
@@ -522,14 +524,15 @@ void AMyPlayerState::BeginPlay()
 }
 ```
 
-7、调用`AFPOnlinePlayerState`的函数添加聊天消息功能
+7、调用`FPOnlinePlayerComponent`的函数添加聊天消息功能
 
 ```c++
-// 接收聊天消息，重写后把消息添加到UI(仅在本地客户端执行)
-virtual void ReceiveChatMessage(const FFPOnlineMessageData& InMessageDat);
+// 接收聊天消息委托，绑定委托后把消息添加到UI(仅在本地执行)
+UPROPERTY(BlueprintAssignable, Category = "FPOnline")
+FFPOnlinePlayerReceiveMessageDelegate OnReceiveMessageDelegate;
 
-// 发送聊天信息，本地调用
-UFUNCTION(BlueprintCallable)
+// 发送聊天信息，本地或服务器调用
+UFUNCTION(BlueprintCallable, Category = "FPOnline")
 void SendChatMessage(const FFPOnlineMessageData& InMessageData);
 ```
 
@@ -622,13 +625,15 @@ public:
 
 ```c++
 // 服务器初始化组件，建议在APawn::PossessedBy()中调用
+// @param InAbilitySystemComp 能力系统组件
 // @param NewServerData 服务器保存的数据
 UFUNCTION(BlueprintCallable, Category = "FPAbility")
-virtual void ServerInitComp(const FFPAbilityServerData& NewServerData);
+virtual void ServerInitComp(UFPAbilitySystemComponent* InAbilitySystemComp, const FFPAbilityServerData& NewServerData);
 
 // 客户端初始化组件，建议在APawn::OnRep_PlayerState中()调用
+// @param InAbilitySystemComp 能力系统组件
 UFUNCTION(BlueprintCallable, Category = "FPAbility")
-void ClientInitComp();
+void ClientInitComp(UFPAbilitySystemComponent* InAbilitySystemComp);
 
 // 接收伤害委托，源和目标的服务器和客户端都可接收到委托。攻击拥有"FPAbility.Damage.Type.NotHitReact"标签将不执行此委托，可以播放受击的动画和声音，也可以显示伤害数字
 UPROPERTY(BlueprintAssignable, Category = "FPAbility")
@@ -727,7 +732,7 @@ void InitAbilityInput();
 void RemoveAllAbilityInput();
 
 // 绑定能力输入(仅支持本地调用)，按键被使用时会自动解绑之前的能力
-void BindAbilityInput(const FGameplayTag& InAbilityTag, const FFPAbilityInput& InAbilityInput);
+bool BindAbilityInput(const FGameplayTag& InAbilityTag, const FFPAbilityInput& InAbilityInput);
 
 // 解除此按键绑定的能力(仅支持本地调用)
 void RemoveAbilityInput(const FFPAbilityInput& InAbilityInput);
@@ -1089,11 +1094,11 @@ struct FFPAbilityModelMap
 public:
 
 	// 行句柄
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	FDataTableRowHandle RowHandle;
 
 	// 是否为蓝图类
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	bool bIsBlueprintClass = false;
 };
 ```
@@ -1102,8 +1107,8 @@ public:
 * **使用指南**
 
 1、根据自己的游戏需求添加`UFPAttributeSet`和`UFPAbilitySystemComponent`，以下为我的添加方法，仅供参考<br>
-我做的是ARPG游戏，除了控制自己的角色，还可以控制IA角色(乘骑或控制)，所以玩家控制AI角色时会有两套属性。<br>
-给`APlayerState`(玩家)和`APawn`(AI)分别添加`UFPAttributeSet`和`UFPAbilitySystemComponent`，继承`IAbilitySystemInterface`接口，并实现接口的函数`GetAbilitySystemComponent`
+给`APlayerState`添加`UFPAttributeSet`和`UFPAbilitySystemComponent`，继承`IAbilitySystemInterface`接口，并实现接口的函数`GetAbilitySystemComponent`。
+给`APawn`也继承`IAbilitySystemInterface`接口，并实现接口的函数`GetAbilitySystemComponent`
 
 ```c++
 AMyPlayerState::AMyPlayerState()
@@ -1121,23 +1126,8 @@ UAbilitySystemComponent* AMyPlayerState::GetAbilitySystemComponent() const
 
 UAbilitySystemComponent* AMyPawn::GetAbilitySystemComponent() const
 {
-	// 判断这个Pawn是否被玩家控制器控制
-	if (IsPlayerControlled())
-	{
-		// 在玩家控制AI角色时，可以临时切换成返回AI的ACS
-		bool bControlAIPawn = false;// 待赋值
-		if (!bControlAIPawn)
-		{
-			// 返回PS的ASC
-			if (AFPPlayerStateBase* LocalPlayerState = GetPlayerState<AFPPlayerStateBase>())
-			{
-				return LocalPlayerState->GetAbilitySystemComponent();
-			}
-		}
-	}
-
-	// 这里返回AI角色的ASC
-	return AbilitySystemComponent;
+	// 通过能力管理组件获取ASC
+	return AbilityManagerComp->GetAbilitySystemComponent();
 }
 ```
 
@@ -1218,7 +1208,7 @@ void K2_RemoveAllAbilityInput();
 
 // 绑定能力输入(仅支持本地调用)，按键被使用时会自动解绑之前的能力
 UFUNCTION(BlueprintCallable, DisplayName = "BindAbilityInput", Category = "FPAbility")
-void K2_BindAbilityInput(UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag, const FFPAbilityInput& InAbilityInput);
+bool K2_BindAbilityInput(UPARAM(meta = (Categories = "FPAbility.Ability")) FGameplayTag InAbilityTag, const FFPAbilityInput& InAbilityInput);
 
 // 解除此按键绑定的能力(仅支持本地调用)
 UFUNCTION(BlueprintCallable, DisplayName = "RemoveAbilityInput", Category = "FPAbility")
