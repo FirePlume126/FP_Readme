@@ -33,7 +33,10 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 		- [FPAbilitySystem](https://www.github.com/FirePlume126/FP_AbilitySystem#fpabilitysystem-fpabilitysystem)：能力属性管理框架
 		- [FPAbilityCombo](https://www.github.com/FirePlume126/FP_AbilitySystem#fpabilitysystem-fpabilitycombo)：能力组合(技能连招系统)
 		- [FPAbilityComboEditor](https://www.github.com/FirePlume126/FP_AbilitySystem#fpabilitysystem-fpabilitycomboeditor)：能力组合编辑器
-	
+	- [FPSpawnerSystem](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem) 生成器系统
+		- [FPSpawnerSystemEditor](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem_fpspawnersystemeditor)：生成器系统编辑器
+		- [FPSpawnerSystem](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem_fpspawnersystem)：生成器系统
+
 * Misc：此类包含杂项插件
 	- [FPFeatures](https://www.github.com/FirePlume126/FP_Misc#fpfeatures)：包含简单的游戏功能模块
 		- [FPInteraction](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-fpinteraction)：交互
@@ -52,6 +55,6 @@ Copyright FirePlume, All Rights Reserved. Email: fireplume@126.com
 |资产类型|数量|资产来源|使用资产模块|
 |:-:|:-:|:-:|:-:|
 |字体|1|[Source Han Sans](https://www.github.com/adobe-fonts/source-han-sans)|Game|
-|图标_鼠标|9|[Lyra Starter Game](https://www.fab.com/listings/93faede1-4434-47c0-85f1-bf27c0820ad0)|[FPUI](#fpcommon-fpui)|
 |动画序列|93|[Advanced Locomotion System V4](https://www.fab.com/listings/ef9651a4-fb55-4866-a2d9-1b38b028f9c7)|Game|
 |音频_脚步|16|[Advanced Locomotion System V4](https://www.fab.com/listings/ef9651a4-fb55-4866-a2d9-1b38b028f9c7)|Game|
+|图标_鼠标|9|[Lyra Starter Game](https://www.fab.com/listings/93faede1-4434-47c0-85f1-bf27c0820ad0)|[FPUI](https://www.github.com/FirePlume126/FP_Common#fpcommon-fpui)|
