@@ -39,9 +39,7 @@ YouTube: [FirePlume126](https://www.youtube.com/@FirePlume126)
 		- [FPSpawnerSystem](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem_fpspawnersystem)：负责管理实体数据并动态生成实体
 
 * Misc：此类包含杂项插件
-	- [FPFeatures](https://www.github.com/FirePlume126/FP_Misc#fpfeatures)：包含简单的游戏功能模块
-		- [FPInteraction](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-fpinteraction)：交互
-		- [FPInventory](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-fpinventory)：库存
+	- [FPFeatures](https://www.github.com/FirePlume126/FP_Misc#fpfeatures)：包含简单的游戏功能模块：[交互](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-interaction)和[库存](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-inventory)
 	- [FPEditorTools](https://www.github.com/FirePlume126/FP_Misc#fpeditortools)：编辑器工具
 
 - [Non self-made assets](#non-self-made-assets)：非自制资产，除此之外的**美术**和所有**程序**均为自制
