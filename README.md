@@ -37,6 +37,9 @@ YouTube: [FirePlume126](https://www.youtube.com/@FirePlume126)
 	- [FPSpawnerSystem](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem)：生成器系统
 		- [FPSpawnerSystemEditor](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem_fpspawnersystemeditor)：在编辑器中定义与生成实体数据
 		- [FPSpawnerSystem](https://www.github.com/FirePlume126/FP_SpawnerSystem#fpspawnersystem_fpspawnersystem)：负责管理实体数据并动态生成实体
+	- [FPAgentSystem](https://www.github.com/FirePlume126/FP_AgentSystem#fpagentsystem)：智能体系统框架
+		- [FPAgentSystem](https://www.github.com/FirePlume126/FP_AgentSystem#fpagentsystem_fpagentsystem)：智能体运行时模块
+		- [FPAgentSystemEditor](https://www.github.com/FirePlume126/FP_AgentSystem#fpagentsystem_fpagentsystemeditor)：智能体编辑器模块
 
 * Misc：此类包含杂项插件
 	- [FPFeatures](https://www.github.com/FirePlume126/FP_Misc#fpfeatures)：包含简单的游戏功能模块：[交互](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-interaction)和[库存](https://www.github.com/FirePlume126/FP_Misc#fpfeatures-inventory)
