@@ -29,6 +29,7 @@ YouTube: [FirePlume126](https://www.youtube.com/@FirePlume126)
 	- [FPLoadingScreen](https://www.github.com/FirePlume126/FP_Common#fploadingscreen)：游戏启动或地图转换期间的加载界面
 
 - System：此类插件为独立系统，可根据游戏类型选择使用
+	- [FPAgentSystem](https://www.github.com/FirePlume126/FP_AgentSystem#fpagentsystem)：智能体系统框架，实现游戏逻辑与大模型的无缝交互
 	- [FPOnlineSystem](https://www.github.com/FirePlume126/FP_OnlineSystem#fponlinesystem)：管理服务器和会话，加载/保存服务器存档和玩家存档并生成玩家
 	- [FPAbilitySystem](https://www.github.com/FirePlume126/FP_AbilitySystem#fpabilitysystem)：能力系统，基于GAS主要包括能力属性管理框架和技能连招系统
 		- [FPAbilitySystem](https://www.github.com/FirePlume126/FP_AbilitySystem#fpabilitysystem-fpabilitysystem)：能力属性管理框架
